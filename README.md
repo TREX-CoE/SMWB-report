@@ -1,2 +1,12 @@
-# SMWB-report
-Sherman-Morrison-Woodbury report
+#Sherman-Morrison-Woodbury report
+
+    This work has been executed in the context of the TREX-CoE[add\_ref]. To that end we aim to address the following goals. To
+    \begin{itemize}
+      \item solve a numerical problem that exists in the Sherman-Morrison method, as implemented and used extensively in the QMC=Chem[add\_ref] software package,
+      \item extend and generalise this method to include higher-rank cases (Woodbury matrix identity),
+      \item implement these methods and optimise them to run efficiently on high performance computing (HPC) architectures.
+    \end{itemize}
+      
+      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method, however, it is often used in other Quantum Monte Carlo (QMC) applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo kernel library (QMCkl)[add\_ref].\\
+      
+      Finally, we include performance-- and numerical benchmarks to demonstrate that the numerical issues that have been identified in QMC=Chem have been resolved and the stated objectives have been met.
