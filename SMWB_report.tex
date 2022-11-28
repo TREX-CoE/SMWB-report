@@ -45,7 +45,7 @@
       \item implement these methods and optimise them to run efficiently on high performance computing (HPC) architectures.
     \end{itemize}
       
-      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method, however, it is often used in other Quantum Monte Carlo (QMC) applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo kernel library (QMCkl)[add\_ref].\\
+      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method. However, it is often used in other Quantum Monte Carlo (QMC) applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo kernel library (QMCkl)[add\_ref].\\
       
       Finally, we include performance-- and numerical benchmarks to demonstrate that the numerical issues that have been identified in QMC=Chem have been resolved and the stated objectives have been met.
 
@@ -53,7 +53,7 @@
 	
       As was mentioned before, the focus of this work addresses the particular numerical problems of the implementation of the Sherman-Morrison method in the TREX-CoE code `QMC=Chem'. Even though the work and results presented and discussed here are obtained with QMC=Chem, the final kernels that have been included in QMCkl can be used in other QMC applications that have a need for fast updating an inverse matrix.\\
       
-        In section 2.1 we briefly explain why the Sherman-Morrison method is needed in QMC=Chem. Then the problem with the current implementation will be pointed out, as well as how it arises in Section 2.2. In Section 2.3 we will introduce a generalisation of the Sherman-Morrison method that does not suffer from this pathology, at least in theory.
+        In section 2.1 we briefly explain why the Sherman-Morrison method is used in QMC=Chem. Then the problem with the current implementation will be pointed out, as well as how it arises in Section 2.2. In Section 2.3 we will introduce a generalisation of the Sherman-Morrison method that does not suffer from this pathology, at least in theory.
 	
 		\subsection{The need for Sherman-Morrison in QMC=Chem}
 			In many Quantum Monte Carlo (QMC) methods the many-body wave function $\Psi(\mathbf{r}_1,\ldots,\mathbf{r}_N)$ for $N$ electrons (where $\mathbf{r}_i$ is the location of electron $i\in\{1,\ldots ,N\}$) is expressed as an expansion of $N_\mathrm{det}$ determinants of Slater-matrices, containing ordered collections of single-electron basis-wave functions
@@ -134,7 +134,7 @@
 			\begin{align}\label{eqn:break-down-condition}
 				\left|1+v_k^\top A^{-1}_{k-1}u_k\right| < \beta
 			\end{align}
-			A value of $\beta = 1\times 10^{-3}$ is customary.\\
+			A value of $\beta = 1\times 10^{-3}$ is customary in QMC=Chem. This values was also used during the experiments we did.\\
 			
 			The second parameter is the tolerance 
 			\begin{align}\label{eqn:tolerance}
@@ -144,7 +144,7 @@
 			\begin{align}\label{eqn:acceptance-condition}
 				\|\rho\|_\mathrm{max} < \tau
 			\end{align}
-			Whenever this inequality holds the numerical error on $\widetilde{A}^{-1}$ is acceptable. A typical value of $\tau = 1\times 10^{-3}$ is customary.\\
+			Whenever this inequality holds the numerical error on $\widetilde{A}^{-1}$ is acceptable. We have chosen value of $\tau = 1\times 10^{-3}$, the same as the value of $\beta$.We choose this value because it was the typical order of magnitude of the norm of the residual matrix composed of the matrix/matrix-inverse pairs from the dataset extracted from QMC=Chem.\\
 			
 			Coming back to the problem, though the final inverse $\widetilde{A}^{-1}$ is guaranteed to exists, there is no such guarantee for the intermediaries $A_k^{-1}$. But there is a silver lining. Looking at Eqn.~(\ref{eqn:rank-k}) we see that applying the updates to $A$ is a commutative procedure; we may apply the update in whatever order we like. It is therefore possible (but not always) to find an order of applying the $U_k$ in such a way that avoids $\det(A_k)=0$ for all $k$. One method for doing this is discussed in Section~\ref{sec:reordering}.\\
 			
