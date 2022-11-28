@@ -16,6 +16,6 @@
       library (QMCkl).
       
       Finally, we include performance- and numerical benchmarks to demonstrate that the numerical
-      issues that have been identified in QMC=Chem have been resolved and the stated objectives have
-      been met.
+      issues that have been identified in QMC=Chem have been resolved and the stated objectives
+      have been met.
 
