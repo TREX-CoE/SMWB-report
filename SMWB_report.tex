@@ -32,7 +32,6 @@
       Highlight the HPC aspects and why it improved the performance. 
       \item Section 2+5. Describe the architectures used for the measurements. Describe the importance of testing in real datasets from QMC=Chem. Compare and present the advantages of each method.
       \item Merge 5.4 and 6. Fill 6.
-      \item Fill 7; it can be short point to the repository and documentation. Point to the regressions tests and the HPC versions.
       \item Small extra part (independent) to summarise the GPU results ?
     \end{itemize}
     
@@ -42,21 +41,23 @@
     \begin{itemize}
       \item solve a numerical problem that exists in the Sherman-Morrison method, as implemented and used extensively in the QMC=Chem[add\_ref] software package,
       \item extend and generalise this method to include higher-rank cases (Woodbury matrix identity),
-      \item implement these methods and optimise them to run efficiently on high performance computing (HPC) architectures.
+      \item implement these methods and optimise them to run efficiently on high performance computing architectures.
     \end{itemize}
       
-      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method. However, it is often used in other Quantum Monte Carlo (QMC) applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo kernel library (QMCkl)[add\_ref].\\
+      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method. However, it is often used in other Quantum Monte Carlo applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo Kernel Library[add\_ref].\\
       
       Finally, we include performance-- and numerical benchmarks to demonstrate that the numerical issues that have been identified in QMC=Chem have been resolved and the stated objectives have been met.
 
   \section{Introduction}
 	
-      As was mentioned before, the focus of this work addresses the particular numerical problems of the implementation of the Sherman-Morrison method in the TREX-CoE code `QMC=Chem'. Even though the work and results presented and discussed here are obtained with QMC=Chem, the final kernels that have been included in QMCkl can be used in other QMC applications that have a need for fast updating an inverse matrix.\\
+      As was mentioned before, the focus of this work addresses the particular numerical problems of the implementation of the Sherman-Morrison method in the TREX-CoE code `QMC=Chem'.\\
       
-        In section 2.1 we briefly explain why the Sherman-Morrison method is used in QMC=Chem. Then the problem with the current implementation will be pointed out, as well as how it arises in Section 2.2. In Section 2.3 we will introduce a generalisation of the Sherman-Morrison method that does not suffer from this pathology, at least in theory.
+      Even though the work and results presented and discussed here are obtained with QMC=Chem, the final kernels that have been included in Quantum Monte Carlo Kernel Library (QMCkl) can be used in other Quantum Monte Carlo (QMC) applications that have a need for fast updating an inverse matrix.\\
+      
+        In section 2.1 we briefly explain why the Sherman-Morrison method is used in QMC=Chem. Then the problem with the current implementation will be pointed out, as well as how it arises in Section 2.2.
 	
-		\subsection{The need for Sherman-Morrison in QMC=Chem}
-			In many Quantum Monte Carlo (QMC) methods the many-body wave function $\Psi(\mathbf{r}_1,\ldots,\mathbf{r}_N)$ for $N$ electrons (where $\mathbf{r}_i$ is the location of electron $i\in\{1,\ldots ,N\}$) is expressed as an expansion of $N_\mathrm{det}$ determinants of Slater-matrices, containing ordered collections of single-electron basis-wave functions
+		\subsection{The case for using Sherman-Morrison in QMC=Chem}
+			In many QMC methods the many-body wave function $\Psi(\mathbf{r}_1,\ldots,\mathbf{r}_N)$ for $N$ electrons (where $\mathbf{r}_i$ is the location of electron $i\in\{1,\ldots ,N\}$) is expressed as an expansion of $N_\mathrm{det}$ determinants of Slater-matrices, containing ordered collections of single-electron basis-wave functions
 			\begin{align}\label{eqn:mbwf}
 				\Psi(\mathbf{R}) = \sum_{k=1}^{N_\mathrm{det}}c_k\:\det S_k^\uparrow(\mathbf{R}_\uparrow)\:\det S_k^\downarrow(\mathbf{R}_\downarrow)
 			\end{align}
@@ -78,9 +79,11 @@
 			\end{align}
 			We therefore need to keep track of the inverses of the Slater-matrices to compute basic quantities like the kinetic energy of the system.\\
 			
-			Common manipulations of the many-body system to move towards a lower total energy are single-electron moves and redistributing occupied orbitals. For a single-electron move this corresponds to changes in the elements on a single row of the Slater-matrix, whereas the redistribution of orbitals correspond to changes in the elements on a single column. Therefore, whenever there is a change in the Slater-matrices due to these manipulations, the inverse of these matrices need to be recomputed. This can be done e.g. with LAPACK, but it turns out that we do not need to recompute the entire inverse matrix, which is unnecessarily expensive. A better method can be used called Sherman-Morrison.
+			Common manipulations of the many-body system to move towards a lower total energy are moving single electrons and/or manipulating electron orbitals. This corresponds to changes either in the rows or the columns in the Slater-matrix. Whenever there is a change in the Slater-matrix due to one these manipulations, the inverse of the Slater-matrix needs to be re-computed.\\
 			
-		\subsection{Sherman-Morrison in QMC=Chem and its iterative problem}\label{sec:problem}
+			A full inverse can be computed with software libraries like LAPACK[ref here] or MKL[ref here], but it turns out that we do not need to recompute the entire inverse matrix. We can use the Sherman-Morrison formula to update the old inverse Slater-matrix using the changes of the Slater-matrix. This turns out to be much less computationally expensive in most cases than recomputing from scratch the whole inverse Slater-matrix from the updated Slater-Matrix.
+			
+		\subsection{The Sherman-Morrison formula}\label{sec:problem}
 			
 			Any change in a single row or column of a general $N\times N$ invertible matrix $A$ can be expressed by a matrix $U$, constructed by the matrix product of two vectors $u$ and $v$
 			\begin{align}
@@ -97,11 +100,14 @@
 			\end{align}
 			Another way of seeing this is to realise that all the rows/columns of $U$ are linear combinations of each other, and therefore the dimension of the row/column space of $U$ is 1.\\
 			
-			The new inverse $\widetilde{A}^{-1}$ can then be computed from the old inverse $A^{-1}$ with the Sherman-Morrison (SM) formula
+			The new inverse $\widetilde{A}^{-1}$ can then be computed from the old inverse $A^{-1}$ with the following formula
 			\begin{align}
 				\widetilde{A}^{-1}=\left(A+uv^\top\right)^{-1} = A^{-1} - \frac{A^{-1}uv^\top A^{-1}}{1+v^\top A^{-1}u}
 			\end{align}
+			This is in the literature called the Sherman-Morrison (SM) formula.
 			
+			
+          \subsection{The iterative problem of SM in QMC=Chem}
 			Multi-row or multi-column changes can be expressed by a rank-$K$ matrix $U$, which is simply a sum of $K$ rank-1 matrices $U_k$ defined by
 			\begin{align}
 				U = \sum_{k=1}^K U_k = \sum_{k=1}^K u_kv_k^\top
@@ -110,7 +116,7 @@
 			\begin{align}\label{eqn:rank-k}
 				\widetilde{A} = \sum_{k=0}^K A_k =  A_0 + \sum_{k=1}^K u_kv_k^\top
 			\end{align}
-			where $A_0$ is identified with the unmodified starting matrix $A$.\\
+			where $A_0$ is identified with the unmodified starting matrix $A$.
 			
 			The SM-formula can be applied iteratively for each $U_k$ until all $K$ changes to $A^{-1}$ have been applied
 			\begin{align}\label{eqn:sm}
@@ -120,54 +126,24 @@
 			
 			When $K$ is small compared to the dimension $N$ of the matrix (and $N$ is not too small itself), computing the new inverse matrix using SM is much cheaper than inverting the whole matrix from scratch with routines like LAPACK that do a full LU-decomposition every time. However, the speed-up of applying a chain of $K$ rank-1 updates with the SM comes with a cost.\\
 			
-			The SM-method has a problematic property. When $K>1$, a situation can arise where one of the $U_k$ in the chain causes an $A_k$ to become singular and $\det\left(A_k\right)=0$. In that case $A^{-1}_{k}$ is no longer defined, but when $\det\left(A_k\right)$ is close to zero $A^{-1}_{k}$ still exists, though it can have a large numerical error. If we  then define the following residual matrix
-			\begin{align} \label{cond:singular}
-				\rho := \widetilde{A}^{-1}\widetilde{A} - I
-			\end{align}
-			we can use $\rho$ to measure the numerical error on $\widetilde{A}^{-1}$.\\
+			The SM-method has a problematic property. When $K>1$, a situation can arise where one of the $U_k$ in the chain causes an $A_k$ to become singular and $\det\left(A_k\right)=0$. In that case $A^{-1}_{k}$ is no longer defined, but when $\det\left(A_k\right)$ is close to zero, $A^{-1}_{k}$ still exists, though it can have a large numerical error.\\
 			
-			At this point we introduce two parameters. The first one is the break-down parameter
+			Even though the final inverse $\widetilde{A}^{-1}$ is guaranteed to exists, there is no such guarantee for the intermediaries $A_k^{-1}$. But there is a silver lining. Looking at Eqn.~(\ref{eqn:rank-k}) we see that applying the updates to $A$ is a commutative procedure; we may apply the update in whatever order we like.\\
+			
+			Saying that $\det\left(A_k\right)$ zero is equivalent to saying that the denominator in Eq.~(\ref{eqn:sm}) is zero. So we can introduce a `break-down' parameter $\beta$ such that
 			\begin{align}\label{eqn:break-down-parameter}
 				0 < \beta \ll 1
 			\end{align}
-			that defines what `close to zero' means. For an intermediary matrix $A_k$, $\det\left(A_k\right)=0$ is equivalent to $1+v_k^\top A^{-1}_{k-1}u_k=0$ in the SM procedure, Eqn.~(\ref{eqn:sm}). For a given $\beta$ the procedure is stopped whenever
+			where $\beta := 1+v_k^\top A^{-1}_{k-1}u_k$. With this parameter we express what close to zero means. A value of $\beta = 1\times 10^{-3}$ is customary in QMC=Chem. This values was also used during the experiments we did.  Then for a given $\beta$, $A^{-1}_{k-1}$ and $u_k$ we stop updating when
 			\begin{align}\label{eqn:break-down-condition}
-				\left|1+v_k^\top A^{-1}_{k-1}u_k\right| < \beta
+				\left|1+v_k^\top A^{-1}_{k-1}u_k\right| < \beta.
 			\end{align}
-			A value of $\beta = 1\times 10^{-3}$ is customary in QMC=Chem. This values was also used during the experiments we did.\\
+			When this happens update $u_k$ is put in a waiting queue. When all the updates are applied in the first pass, the waiting queue is processed in a second pass. The same can happen in the second pass and we end up with a new queue. Most of the time this process ends and eventually all updates are applied in some random order. But sometimes the queue cannot be emptied and thus a good order does not exists. When this happens a full inverse is computed from scratch. It might be that if we would have started with another $u_k$ we could have found a good order. But this kind of algorithm would probably be much slower than simple computing a full inverse.\\
 			
-			The second parameter is the tolerance 
-			\begin{align}\label{eqn:tolerance}
-				\quad 0 < \tau \ll 1
-			\end{align}
-			that will determine if the final $\widetilde{A}^{-1}$ is acceptable or not. Using the element-wise Max-norm we impose the following condition on the residual matrix $\rho$
-			\begin{align}\label{eqn:acceptance-condition}
-				\|\rho\|_\mathrm{max} < \tau
-			\end{align}
-			Whenever this inequality holds the numerical error on $\widetilde{A}^{-1}$ is acceptable. We have chosen value of $\tau = 1\times 10^{-3}$, the same as the value of $\beta$.We choose this value because it was the typical order of magnitude of the norm of the residual matrix composed of the matrix/matrix-inverse pairs from the dataset extracted from QMC=Chem.\\
+			In the next section we will introduce several numerical methods that will either mitigate this problem or remove the possibility for it to happen completely.
+					
 			
-			Coming back to the problem, though the final inverse $\widetilde{A}^{-1}$ is guaranteed to exists, there is no such guarantee for the intermediaries $A_k^{-1}$. But there is a silver lining. Looking at Eqn.~(\ref{eqn:rank-k}) we see that applying the updates to $A$ is a commutative procedure; we may apply the update in whatever order we like. It is therefore possible (but not always) to find an order of applying the $U_k$ in such a way that avoids $\det(A_k)=0$ for all $k$. One method for doing this is discussed in Section~\ref{sec:reordering}.\\
-			
-			But sometimes it is not possible to find a correct order and we need to find another way. Another method was introduced by J.T. Slagel and it is based on splitting all the coefficients of an update $k$ in half whenever $\det(A_k)=0$. This method is discussed in Section~\ref{sec:splitting}.\\
-			
-		\subsection{The Woodbury matrix identity}\label{sec:intro-woodbury}
-			To circumvent the problem of iterative SM altogether it is also possible to generalise the SM formula for rank-$k$ updates. This is the Woodbury matrix identity (WB) and in fact SM is the special case for where the update matrix $U$ is of order rank-1. This is its most general form
-			\begin{align}
-				\left(A+UCV\right)^{-1} = A^{-1} - A^{-1}U(C^{-1}+VA^{-1}U)^{-1}VA^{-1}
-			\end{align}
-			where $U:N\times K$, $C:K\times K$ and $V:K\times N$ are conformable matrices. Notice that
-			\begin{align}\label{eqn:wb-denom}
-				D:=C^{-1}+VA^{-1}U
-			\end{align}  is at most $K\times K$. For example, when calculating the electronic structure and ground state properties of the compound Benzene with QMC=Chem, 75\% of the time the number of updates that need to be applied to the inverse Slater-matrix is not larger than six, so $K=6$, whereas for Benzene $N=21$!\\
-			
-			Notice also that for $C=I$, $U=u$ and $V=v^\top$, $D$ reduces to
-			\begin{align}
-				D = 1 + v^\top A^{-1} u
-			\end{align}
-			and because $v^\top A^{-1} u$ is scalar,  $D^{-1}=1/\left(1 + v^\top A^{-1} u\right)$, so we recover the SM formula.\\
- 
-			In Section~\ref{sec:num_opt} we will cover several techniques that will try to mitigate the problems of iterative SM discussed here.
-			
+ 			
 %		\section{Merge wirth chap. Measurements and rename: experiments with QMC=Chem.}
 %			QMC=Chem relies heavily on the use of SM for updating the determinants and inverses in the many-body wave function. So any gain in numerical accuracy and/or performance could have a significant impact on its overall performance. In the version we used to test and extract the datasets a form of iterative SM was already being used. Before the individual determinants are updated after an electron move they are ordered first in such a way that the next determinant only differs by the smallest possible number of columns, molecular orbitals (MOs), from the previous one. Then the first inverse in the sequence is computed fully with LAPACK. The next one, often differing only one column and therefore only one rank-1 update from the previous one, is computed using SM. Then the next one, etc. until the end of the chain is reached.
 %			
@@ -203,7 +179,23 @@
 %			\end{figure}	
 
 		
-		\section{Numerical methods}\label{sec:num_opt}
+  \section{Numerical methods}\label{sec:num_opt}
+		
+		In this section we list and explain the numerical methods and algorithms that we developed to solve the numerical problems present in the current implementation of iterative SM in QMC=Chem. They are not necessarily listed in the order that we developed and tested them, but rather in order of ascending success rate.\\
+		
+		The method we used to measure the success rate is straight forward. If we can define the following residual matrix
+			\begin{align} \label{cond:singular}
+				\rho := \widetilde{A}^{-1}\widetilde{A} - I
+			\end{align}
+			we can use $\rho$ to specify an error on $\widetilde{A}^{-1}$ in the same way that we use the break-down parameter $\beta$. As before we define the tolerance 
+			\begin{align}\label{eqn:tolerance}
+				\quad 0 < \tau \ll 1
+			\end{align}
+			that will determine if the final $\widetilde{A}^{-1}$ is acceptable or not. Using the element-wise Max-norm we impose the following condition on the residual matrix $\rho$
+			\begin{align}\label{eqn:acceptance-condition}
+				\|\rho\|_\mathrm{max} < \tau
+			\end{align}
+			Whenever this inequality holds the numerical error on $\widetilde{A}^{-1}$ is acceptable. We have chosen value of $\tau = 1\times 10^{-3}$, the same as the value of $\beta$. We choose this value because it was the typical order of magnitude of the norm of the residual matrix composed of the matrix/matrix-inverse pairs from the dataset extracted from QMC=Chem.
 		
 			\subsection{An na\"{i}ve approach to iterative Sherman-Morrison}\label{sec:naive}
 				This method is inspired by Eq.~(15) in \cite{MAPONI2007276}
@@ -215,13 +207,9 @@
 		\left(\mathbb{1}_N-\frac{A_0^{-1}u_1v_1^\top }{1+v_1^\top A_0^{-1}u_1}\right)
 		A_0^{-1}
 				\end{align}
-				It omits computing the solution and auxiliary solution vectors $x_k$ and $y_{k,l}$. During the course of applying the chain of rank-1 updates the denominators in Eqn.~(\ref{eqn:naive}) are checked with the condition
-				\begin{align}\label{cond:break-down}
-					\left|1+v_k^\top A_{k-1}^{-1}u_k\right| < \beta
-				\end{align}
-				where $\beta\ll1$ is what we call the break-down condition. This condition is equivalent to $\mathrm{det}(A_k)=0$. When this happens the method stops updating the inverse and exits with an error. A typical value we used is $\beta=1\times10^{-3}$.\\
-				
-				For a given number of updates $K$, the kernel works as follows:\\
+				It omits computing the solution and auxiliary solution vectors $x_k$ and $y_{k,l}$. During the course of applying the chain of rank-1 updates the denominators in Eqn.~(\ref{eqn:naive}) are checked with the condition Eqn.~(13).\\
+	
+				For a given number of updates $K$, this kernel works as follows:\\
 				\\
 				\begin{algorithm}[H]
 				\caption{The ``Na\"{i}ve'' kernel}\label{algo:naive}
@@ -285,9 +273,11 @@
 				}
 				\end{algorithm}
 							
-			\subsection{Back to the end of the queue: reordering the updates}\label{sec:reordering}
-			
-				This method uses the fact that sometimes an inverse can be found by reordering the rank-1 updates. It is an extension of the previous method where, when Condition~(\ref{cond:break-down}) is triggered for some update $m$ along the chain of $k$-updates, the update is sent to a delay-queue. The next update is then evaluated and if it does not trigger a break-down, it is applied and the inverse is updates. If not, it is also send to the delay-queue. Then the next update is evaluated, etc., etc.\\
+			\subsection{Reordering the updates}\label{sec:reordering}
+
+				This method is the one currently used in QMC=Chem. It is an improvement of the ``Na\"{i}ve'' method stated in Section~3.1, where an update $u_k$ is kept back in a delay queue 
+
+				This method is the one currently used in QMC=Chem. It is an improvement of the ``Na\"{i}ve'' method stated in Section~3.1 where, when Condition~(\ref{cond:break-down}) is triggered for some update $u_k$ along the chain of $k$-updates, the update is sent to a delay-queue. The next update is then evaluated and if it does not trigger a break-down, it is applied and the inverse is updates. If not, it is also send to the delay-queue. Then the next update is evaluated, etc., etc.\\
 				
 				When the whole list is evaluated the method considers the updates left in the delay-queue. If it is empty it is finished if it is not, the delay-queue is considered the new list of updates and they are re-evaluated. If one triggers a break-down it is again send to a delay-queue. The whole algorithm is repeated until the update queue is empty.\\
 				
@@ -371,6 +361,22 @@
 				\end{algorithm}
 			
 			\subsection{All at once: the Woodbury matrix identity}
+			
+			To circumvent the problem of iterative SM altogether it is also possible to generalise the SM formula for rank-$k$ updates. This is the Woodbury matrix identity (WB) and in fact SM is the special case for where the update matrix $U$ is of order rank-1. This is its most general form
+			\begin{align}
+				\left(A+UCV\right)^{-1} = A^{-1} - A^{-1}U(C^{-1}+VA^{-1}U)^{-1}VA^{-1}
+			\end{align}
+			where $U:N\times K$, $C:K\times K$ and $V:K\times N$ are conformable matrices. Notice that
+			\begin{align}\label{eqn:wb-denom}
+				D:=C^{-1}+VA^{-1}U
+			\end{align}  is at most $K\times K$. For example, when calculating the electronic structure and ground state properties of the compound Benzene with QMC=Chem, 75\% of the time the number of updates that need to be applied to the inverse Slater-matrix is not larger than six, so $K=6$, whereas for Benzene $N=21$!\\
+			
+			Notice also that for $C=I$, $U=u$ and $V=v^\top$, $D$ reduces to
+			\begin{align}
+				D = 1 + v^\top A^{-1} u
+			\end{align}
+			and because $v^\top A^{-1} u$ is scalar,  $D^{-1}=1/\left(1 + v^\top A^{-1} u\right)$, so we recover the SM formula.\\
+
 				We compute $\widetilde{A}=A^{-1}-CD^{-1}E$, where $C=A^{-1}U$, $D=1+VC$ and $E=VA^{-1}$.
 			
 				\begin{algorithm}[H]
@@ -450,32 +456,6 @@ or $P^\top_{n,l}$ to pad the rows of $A_{l,m}$
 	\widetilde{A}_{n,m} &= P^\top_{n,l}A_{l,m}
 \end{align}
 
-\subsubsection{Sherman-Morrison with zero-padding}
-
-We can now use this to add padding to the Sherman-Morrison formula to make it more efficient in SIMD enabled CPUs. We go from using matrices $S$, $S^{-1}$ and $u$ to using matrices $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{u}$
-\begin{align}
-	\left(S+uv^\top \right)^{-1} &= S^{-1}-\frac{S^{-1}uv^\top S^{-1}}{1+v^\top S^{-1}u} \\
-								&\downarrow \\
-	\left(\widetilde{S}+\widetilde{u}v^\top \right)^{-1} &= \widetilde{S}^{-1}-\frac{\widetilde{S}^{-1}\widetilde{u}v^\top \widetilde{S}^{-1}}{1+v^\top \widetilde{S}^{-1}\widetilde{u}} \\
-								&\Updownarrow \\
-	\left(P^\top S+P^\top uv^\top \right)^{-1} &= S^{-1}P-\frac{S^{-1}PP^\top uv^\top S^{-1}P}{1+v^\top S^{-1}PP^\top u}	
-\end{align}
-for padding added to the columns of $S$ and $u$ and to the rows of $S^{-1}$. This insures that
-\begin{align}
-	\widetilde{S}^{-1}\widetilde{S} &= S^{-1}PP^\top S \\
-									&= S^{-1}IS \\
-									&= S^{-1}S
-\end{align}
-
-\subsubsection{Woodbury with zero-padding}
-For the Woodbury formula we proceed in the same way. The matrices $S$, $S^{-1}$ and $U$ are replaced by $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{U}$
-\begin{align}
-\left(S+UV\right)^{-1} &= S^{-1} - S^{-1}U(I+VS^{-1}U)^{-1}VS^{-1}\\
-	&\downarrow \\
-\left(\widetilde{S}+\widetilde{U}V\right)^{-1} &= \widetilde{S}^{-1} - \widetilde{S}^{-1}\widetilde{U}(I+V\widetilde{S}^{-1}\widetilde{U})^{-1}V\widetilde{S}^{-1} \\
-		&\Updownarrow \\
-\left(P^\top S+P^\top UV\right)^{-1} &= S^{-1}P - S^{-1}PP^\top U(I+VS^{-1}PP^\top U)^{-1}VS^{-1}P
-\end{align}
 
 			\subsection{Manual loop-unrolling: $2\times 2$ and ~$3\times 3$~WB and the Blocking kernel}
 				Looking at Fig.~\ref{fig:upd_freq}, it is evident that most of the time the number of updates that have to be processed is small, mostly one, two or three updates. It is for that reason that we made two special cases of the $K\times K$ Woodbury kernel: a $2\times 2$ case and a $3\times 3$ case. Because the number of rank-1 updates are known we can unroll and simplify some loops. It also permits us to use explicit expressions for computing the determinants and inverses of the $2\times 2$ and $3\times 3$ matrix $D$ of Eq.~(\ref{eqn:wb-denom}), removing the need for expensive calls to LAPACK for the LU-decomposition and matrix inversion.\\
@@ -786,15 +766,52 @@ For the Later-kernel these bands must be related to the number of recursions bec
 				\label{fig:Pareto_passfail_mean}
 			\end{figure}
 
+  \section{Discussion and recommendation}
 		
-	\section{Discussion and recommendation}
-		
-	\section{Inclusion in TREX-CoE/QMCkl}
+  \section{Inclusion in Quantum Monte Carlo Kernel Library}
+    Since this work has been funded by and executed in the context of the TREX Centre of Excellence in HPC for Quantum Chemistry, all the computational kernels that are presented in this report (except the kernel outlined in Section~3.2) are included in the TREX Centre of Excellence Quantum Monte Carlo Kernel Library (TREX-CoE/QMCkl). The repository where the QMCkl code and documentation is stored can be found on \url{https://github.com/TREX-CoE/qmckl}.\\
+    
+    The kernels themselves as well as the code, documentation and regression testes can be found in an `Org-mode' formatted file can be found the \texttt{org/} subdirectory at \url{https://github.com/TREX-CoE/qmckl/blob/master/org/qmckl_sherman_morrison_woodbury.org}.\\
+    
+    The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}
+    
+    
+    
+
+
+  \newpage
+  \appendix
+
+\section{Sherman-Morrison with zero-padding}
+
+We can now use this to add padding to the Sherman-Morrison formula to make it more efficient in SIMD enabled CPUs. We go from using matrices $S$, $S^{-1}$ and $u$ to using matrices $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{u}$
+\begin{align}
+	\left(S+uv^\top \right)^{-1} &= S^{-1}-\frac{S^{-1}uv^\top S^{-1}}{1+v^\top S^{-1}u} \\
+								&\downarrow \\
+	\left(\widetilde{S}+\widetilde{u}v^\top \right)^{-1} &= \widetilde{S}^{-1}-\frac{\widetilde{S}^{-1}\widetilde{u}v^\top \widetilde{S}^{-1}}{1+v^\top \widetilde{S}^{-1}\widetilde{u}} \\
+								&\Updownarrow \\
+	\left(P^\top S+P^\top uv^\top \right)^{-1} &= S^{-1}P-\frac{S^{-1}PP^\top uv^\top S^{-1}P}{1+v^\top S^{-1}PP^\top u}	
+\end{align}
+for padding added to the columns of $S$ and $u$ and to the rows of $S^{-1}$. This insures that
+\begin{align}
+	\widetilde{S}^{-1}\widetilde{S} &= S^{-1}PP^\top S \\
+									&= S^{-1}IS \\
+									&= S^{-1}S
+\end{align}
+
+\section{Woodbury with zero-padding}
+For the Woodbury formula we proceed in the same way. The matrices $S$, $S^{-1}$ and $U$ are replaced by $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{U}$
+\begin{align}
+\left(S+UV\right)^{-1} &= S^{-1} - S^{-1}U(I+VS^{-1}U)^{-1}VS^{-1}\\
+	&\downarrow \\
+\left(\widetilde{S}+\widetilde{U}V\right)^{-1} &= \widetilde{S}^{-1} - \widetilde{S}^{-1}\widetilde{U}(I+V\widetilde{S}^{-1}\widetilde{U})^{-1}V\widetilde{S}^{-1} \\
+		&\Updownarrow \\
+\left(P^\top S+P^\top UV\right)^{-1} &= S^{-1}P - S^{-1}PP^\top U(I+VS^{-1}PP^\top U)^{-1}VS^{-1}P
+\end{align}
 
 \clearpage
 \addcontentsline{toc}{section}{References}
 \bibliographystyle{abbrv}
 \bibliography{SMWB_report.bib}
 		
-
 \end{document}
