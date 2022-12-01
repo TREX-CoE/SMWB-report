@@ -670,7 +670,7 @@ Set the global cumulator to 0\;
     	\end{align}
     	
       \subsubsection{329 $\alpha$-determinants}
-        In Table~\ref{tab:fr329} the fail rates are shown for 10384 determinants in the wave function. The Na\"{i}ve-kernel is particularly bad because as the number of rank-1 updates increases along the 329-determinant chain the probability of encountering a rank-1 update that cause singular behaviour increases as well. The Reordering-kernel is already two orders of magnitude better, having only 26 failed updates. The Splitting-- and Blocking-kernel are clearly the best, with only 21 failures. Unlike the failures for the Na\"{i}ve-kernel, these are not failures of the kernels themselves due to denominators that are too small, i.e. condition \ref{cond:break-down}, but due to a too large max norm of the residual matrix $\rho$.\\
+        In Table~\ref{tab:fr329} the fail rates are shown for 10384 update cycles and 329 determinants in the wave function. The Na\"{i}ve-kernel is particularly bad because as the number of rank-1 updates increases along the 329-determinant chain the probability of encountering a rank-1 update that cause singular behaviour increases as well. The Reordering-kernel is already two orders of magnitude better, having only 26 failed updates. The Splitting-- and Blocking-kernel are clearly the best, with only 21 failures. Unlike the failures for the Na\"{i}ve-kernel, these are not failures of the kernels themselves due to denominators that are too small, i.e. condition \ref{cond:break-down}, but due to a too large max norm of the residual matrix $\rho$.\\
 \begin{table}[h]
 	\centering
 		\begin{tabular}{@{}lrrr@{}}
@@ -683,7 +683,7 @@ Set the global cumulator to 0\;
 			Maponi A3  & 9544 	&  840            &  8.09        \\
 			Maponi A3 \& Splitting & 9921   &  463           &   4.46       \\ \bottomrule
 		\end{tabular}
-		\caption{Fail rates for Benzene with 10384 $\alpha$-determinants in total, $\beta=1\times10^{-3}$ and $\tau=1\times10^{-3}$.}
+		\caption{Fail rates for Benzene with 329 $\alpha$-determinants and 10384 update cycles in total, $\beta=1\times10^{-3}$ and $\tau=1\times10^{-3}$.}
 		\label{tab:fr329}
 \end{table}
 				
@@ -718,51 +718,53 @@ Set the global cumulator to 0\;
 	\caption{Fail rates for Benzene with 15784 $\alpha$-determinants, 222008 determinants in total, $\beta=1\times10^{-3}$ and $\tau=1\times10^{-3}$. The fail rates are shown for five relevant number of updates.}\label{tab:fr15784}
 \end{table}			
 			
-		\subsection{Results for the performance}
-		
-			\subsubsection{Performance per rank-1 update}
+    \subsection{Results for the performance}
+      Before we jump to the final performance results there are two aspects that are interesting in their own respect. One of them is the performance per rank-1 update. Section~5.5.1 will show that this is mostly a constant. Which is good news. Another aspect, related to the first, is performance stratification. This is explained in Section~5.5.2.
+            
+      \subsubsection{Performance per rank-1 update}
 			
-			\begin{figure}[h]
-				\centering
-				\includegraphics[width=1\textwidth]{perf_per_update.png}
-				\caption{Performance in CPU-cycles per rank-1 update for various kernels.}
-				\label{fig:perf_per_update}
-			\end{figure}	
-
-			In Fig.~\ref{fig:perf_per_update} is shown the number of CPU-cycles per rank-1 update versus the number of rank-1 updates for various kernels. Focussing our attention on the $3^\mathrm{rd}$ there are two main branches. One is centred around 250 CPU-cycles/rank-1 update. For one rank-1 update the spread is due to variability of the machine itself. For the cases of more than one rank-1 update this is mainly due to the number of splits for the Splitting kernel, or the number of failed blocks in the Blocking kernel.\\
-							
-			Looking at the left two panels of Fig.~\ref{upds_nsplits_cpucycles}, for the case of Benzene, 329 determinants the maximum number of splits is always one less than the number of updates, in case of the Splitting kernel. The Blocking kernel seems to get away with less splits in general, except in the case of two rank-1 updates. On the right two panels of Fig.~\ref{upds_nsplits_cpucycles} we plotted the average number of CPU cycles per rank-1 update as a function of the number of splits. In  the \textsc{passing} cases the number of CPU cycles per update increase linearly as the number of splits increases, up until 6 splits where it plateaus. For the \textsc{failing} cases there are never more than 3 splits, but most of these occurences are clustered around 0--2 splits and take an average of about 300 CPU cycles per update. 
-
-			\begin{figure}[h]
-				\centering
-				\includegraphics[width=1\textwidth]{upds_nsplits_cpucycles.png}
-				\caption{Distribution of the occurrence frequency for each number of rank-1 updates that can occur. The blue area represents the $3^\mathrm{rd}$ quartile of the distribution. For the 329-determinants case, 75\% of the time updates consist of 1--6 rank-1 updates. For the 15784-determinants case updates consist of 1--8 rank-1 updates.}
-				\label{upds_nsplits_cpucycles}
-			\end{figure}
+    	\begin{figure}[h]
+    		\centering
+    		\includegraphics[width=1\textwidth]{perf_per_update.png}
+    		\caption{Performance in CPU-cycles per rank-1 update for various kernels.}
+    		\label{fig:perf_per_update}
+    	\end{figure}	
+    
+    	In Fig.~\ref{fig:perf_per_update} is shown the number of CPU-cycles per rank-1 update versus the number of rank-1 updates for various kernels. Focussing our attention on the $3^\mathrm{rd}$ there are two main branches. One is centred around 250 CPU-cycles/rank-1 update. For one rank-1 update the spread is due to variability of the machine itself. For the cases of more than one rank-1 update this is mainly due to the number of splits for the Splitting kernel, or the number of failed blocks in the Blocking kernel.\\
+    					
+    	Looking at the left two panels of Fig.~\ref{upds_nsplits_cpucycles}, for the case of Benzene, 329 determinants the maximum number of splits is always one less than the number of updates, in case of the Splitting kernel. The Blocking kernel seems to get away with less splits in general, except in the case of two rank-1 updates. On the right two panels of Fig.~\ref{upds_nsplits_cpucycles} we plotted the average number of CPU cycles per rank-1 update as a function of the number of splits. In  the \textsc{passing} cases the number of CPU cycles per update increase linearly as the number of splits increases, up until 6 splits where it plateaus. For the \textsc{failing} cases there are never more than 3 splits, but most of these occurences are clustered around 0--2 splits and take an average of about 300 CPU cycles per update. 
+    
+    	\begin{figure}[h]
+    		\centering
+    		\includegraphics[width=1\textwidth]{upds_nsplits_cpucycles.png}
+    		\caption{Distribution of the occurrence frequency for each number of rank-1 updates that can occur. The blue area represents the $3^\mathrm{rd}$ quartile of the distribution. For the 329-determinants case, 75\% of the time updates consist of 1--6 rank-1 updates. For the 15784-determinants case updates consist of 1--8 rank-1 updates.}
+    		\label{upds_nsplits_cpucycles}
+    	\end{figure}
 						
 
 		\subsubsection{Performance stratification}
 		
-		When you look at Fig.~\ref{fig:pareto_all} of everything together, all kernels, all updates, pass and fail, it you get a good overview of the whole space of possibilities but you cannot see well what is going on for each individual kernel. It is still somewhat instructive because you can see that most of the failures come from Naive and QMC=Chem Naive (covered by Naive). That was to be expected.
-		\begin{figure}
-			\includegraphics[width=\linewidth]{pareto_pass_fail_all.png}	
+		  Looking at Fig.~\ref{fig:pareto_all} of everything together, all kernels, all updates, pass and fail, it you get a good overview of the whole space of possibilities but you cannot see well what is going on for each individual kernel. It is still somewhat instructive because you can see that most of the failures come from Naive and QMC=Chem Naive (covered by Naive). That was to be expected.\\
+		\begin{figure}[H]
+			\includegraphics[width=0.5\linewidth]{pareto_pass_fail_all.png}	
 			\caption{The accuracy ($||SS^{-1}-I||_\mathrm{max}$) vs. the performance for all tested kernels, above and below the acceptance tolerance.}
 			\label{fig:pareto_all}
 		\end{figure}
 		
-2. In Fig.~\ref{fig:pareto_pass} we are only looking at the cycles that passed. It is already a bit better but is still a bit messy. Not sure this plot is much better than the first one. Maybe we should not include it.
-		\begin{figure}
-			\includegraphics[width=\linewidth]{pareto_pass_all.png}	
+        In Fig.~\ref{fig:pareto_pass} we are only looking at the cycles that passed. It is already a better but is still a bit messy. Not sure this plot is much better than the first one. Maybe we should not include it.\\
+		\begin{figure}[H]
+			\includegraphics[width=0.5\linewidth]{pareto_pass_all.png}	
 			\caption{The accuracy ($||SS^{-1}-I||_\mathrm{max}$) vs. the performance for all tested kernels, above and below the acceptance tolerance.}
 			\label{fig:pareto_pass}
 		\end{figure}
-3. In the third plot I focused on only the passed updates with 9 cycles. This is already much cleaner and gives a better idea of what the kernels are doing. And it is here were you can clearly see some stratification of the clusters for each individual kernel, except for the 2 Naive ones and LAPACK.
+		
+        In the third plot I focused on only the passed updates with 9 cycles. This is already much cleaner and gives a better idea of what the kernels are doing. And it is here were you can clearly see some stratification of the clusters for each individual kernel, except for the 2 Naive ones and LAPACK.\\
 
-4. To understand the stratification I thought of zooming in on one kernel to see if it had something to do with splitting. So the next plot only shows the Pareto plot for all passed  9-update cycles of the splitting kernel. Here you can see clearly 4 distinct bands. First I thought this was linked to the maximum number of splits for a given 9-update cycle. But this is not the case because the maximum number of splits is 8 and there are not 9 bands (one extra for 0 splits). Then I thought it could be related to the number of recursions the kernel calls itself, but this was also not the case because the maximum number of recursions is only 1x: all splits happen in the first pass and get completed in the second pass (for 9-update cycles). Finally it is related to the number of splits, but not all number of splits happen. In fact only 0, 1, 3, 7 and 8 splits happen for 9-update cycles. So when you then split out the data for these number of splits you get the final plot.
-5. In the last plot you can clearly see that the bands correspond to each bin of number of splits. There are actually 5 bands, but the band for 8-splits only contains 2 points and is very close to the points for the 7-split band. If there were more points I am sure they. would form a band as well. I am pretty convinced this also explains the bands in the performance plots for splitting 
-@Eric P.
- mentioned 2 weeks ago when I was at UVSQ.
-For the Later-kernel these bands must be related to the number of recursions because it doesn’t do splitting. For the Blocked kernel it is also splitting but the distribution of the number of splits is modulated by the fact some Woodbury blocks of 3 succeed where there would otherwise be a split. If it is needed I can do the same analysis for the Blocked kernel. (
+        To understand the stratification I thought of zooming in on one kernel to see if it had something to do with splitting. So the next plot only shows the Pareto plot for all passed  9-update cycles of the splitting kernel. Here you can see clearly 4 distinct bands. First I thought this was linked to the maximum number of splits for a given 9-update cycle. But this is not the case because the maximum number of splits is 8 and there are not 9 bands (one extra for 0 splits). Then I thought it could be related to the number of recursions the kernel calls itself, but this was also not the case because the maximum number of recursions is only 1x: all splits happen in the first pass and get completed in the second pass (for 9-update cycles). Finally it is related to the number of splits, but not all number of splits happen. In fact only 0, 1, 3, 7 and 8 splits happen for 9-update cycles. So when you then split out the data for these number of splits you get the final plot.\\
+        
+        In the last plot you can clearly see that the bands correspond to each bin of number of splits. There are actually 5 bands, but the band for 8-splits only contains 2 points and is very close to the points for the 7-split band. If there were more points I am sure they. would form a band as well. I am pretty convinced this also explains the bands in the performance plots for splitting\\
+
+        For the Later-kernel these bands must be related to the number of recursions because it doesn’t do splitting. For the Blocked kernel it is also splitting but the distribution of the number of splits is modulated by the fact some Woodbury blocks of 3 succeed where there would otherwise be a split. If it is needed I can do the same analysis for the Blocked kernel.
 			
 
   \section{Discussion and recommendation}
