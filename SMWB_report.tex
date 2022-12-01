@@ -26,10 +26,7 @@
 	
   \section*{TODO}
     \begin{itemize}           
-      \item Section 4 - Reorganise, simplify padding merge with constant + alignment and separate optimisations for the blocked case. Include vectorisation figures after and before.
-      Highlight the HPC aspects and why it improved the performance. 
-      \item Section 2+5.   Compare and present the advantages of each method.
-      \item Merge 5.4 and 6. Fill 6.
+       \item Fill 6.
       \item Small extra part (independent) to summarise the GPU results?
     \end{itemize}
     
@@ -385,183 +382,181 @@
         E&:=VA_{\text{old}}^{-1}
       \end{align}
       
-      The algorithm for $K$ updates works as follows\\
+      The algorithm for $K$ updates is listed below\\
       
       \begin{algorithm}[H]
         \caption{The ``$K\times K$ Woodbury'' kernel}\label{algo:woodbury}
-        \KwData{$A_{\text{old}}^{-1}$, $\dim A_{\text{old}}$, $\det A_{\text{old}}$, $K$, $U, V$, $\beta$}
-        \KwResult{$A_{\text{new}}^{-1}$, $\det A_{\text{new}}$}
+        \KwData{$A_{\text{old}}^{-1}$, $\dim(A_{\text{old}})$, $\det(A_{\text{old}})$, $K$, $U, V$, $\beta$}
+        \KwResult{$A_{\text{new}}^{-1}$, $\det(A_{\text{new}})$}
         compute: $B \gets A_{\text{old}}^{-1} U$\;
         compute: $D \gets 1 + V B$\;
         compute: $E \gets V A_{\text{old}}^{-1}$\;
-        compute: $\det D$ (by LU-decomposition)\;
-        \If{$\left|\det D\right|<\beta$}
+        compute: $\det(D)$ from LU factorization\;
+        \If{$\left|\det(D)\right|<\beta$}
         {
           \textbf{exit}\;
         }
-        update: $\det A_{\text{new}} \gets \det A_{\text{old}}\times\det D$\;
-        compute: $D^{-1}$ (from earlier LU-decomposition)\;
+        update: $\det(A_{\text{new}})\gets \det(A_{\text{old}})\times\det(D)$\;
+        compute: $D^{-1}$ from earlier LU factorization\;
         compute: $A_{\text{new}}^{-1} \gets A_{\text{old}}^{-1}-BD^{-1}E$\;
       \end{algorithm}
 		
   \section{HPC versions}
-		
+    To run with optimum efficiency on HPC architectures we used several well known techniques. Most of the time was spent optimising the vectorisation that is discussed next. Manual loop-unrolling for a fixed number of updates in the WB-kernel is discussed in Section~4.2. To fine tune the performance even more and have specialised kernels for every system size we use source-code generation that is discussed in Section~4.3.
 		    
 		    
-    \subsection{SIMD and zero-padding (maybe put math in an annex and just say we can padd.)}
-				Many loops cannot be completely vectorised when the loop-bounds are not integer multiples of the CPU's vector length. In that case tail-loops need to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of unnecessary work by padding vectors and matrices with extra zeros so that their sizes and the loop-bounds are integer multiples of the vector size and tail-loops are eliminated. In that case, the SIMD registers are used and the computation as a whole is faster, even if slightly more work has been done.\\
-				
-				The amount of zero-padding depends on the vector length of the CPU. For example for an Intel CPU with AVX2 support the vector length is 256~bits, which is equivalent to 4 64-bit double precision floating point numbers or 8 32-bit single precision floating point numbers. For AVX512 these numbers double. Lets define the vector length as 
-\begin{align}
-	v := \text{vector length of the CPU}
-\end{align}
-
-Then for general $k\times l$, $l\times m $ matrices $A,B$ the amount of zero-padding 
-\begin{align}
-	p := \text{amount of zero-padding}
-\end{align} 
-on the inner-- and outer dimension $l$ of $A,B$ is equal to
-\begin{align}
-p= \left\{
-\begin{array}{ll}
-      v-l\bmod(v), & l\bmod(v)\neq0 \\
-      0, & \text{otherwise}\\
-\end{array} 
-\right.	
-\end{align}
-
-such that
-\begin{align}
-	0 \leq p \leq v-1
-\end{align}
-We then set the padded dimension
-\begin{align}
-n = l + p
-\end{align}
-We can then define the $l\times n$ padding-matrix $P_{1l,n}$ as the augmented matrix
-\begin{align}
-	P_{l,n} := \left(I_l\right|0_{l,p})
-\end{align}
-where $I_l$ is the $l\times l$ identity-matrix and $0_{l,p}$ is the $l\times p$ null-matrix.
-The matrix $P_{l,n}$ has the properties such that
-\begin{align}
-	P_{l,n}P^\top _{n,l}=I_l
-\end{align}
-and
-\begin{align}
-	P^\top _{n,l}P_{l,n}=
-	\begin{bmatrix}
-			I_l & 0_{l,p} \\
-			0_{p,l} & 0_{p,p}
-\end{bmatrix}
-\end{align}
-We can then construct zero-padded matrices using $P_{l,n}$ to pad the columns of $A_{k,l}$
-\begin{align}
-	\widetilde{A}_{k,n} &= A_{k,l}P_{l,n}
-\end{align}
-or $P^\top_{n,l}$ to pad the rows of $A_{l,m}$
-\begin{align}
-	\widetilde{A}_{n,m} &= P^\top_{n,l}A_{l,m}
-\end{align}
-
-
-			\subsection{Manual loop-unrolling: $2\times 2$ and ~$3\times 3$~WB and the Blocking kernel}
-				Looking at Fig.~\ref{fig:upd_freq}, it is evident that most of the time the number of updates that have to be processed is small, mostly one, two or three updates. It is for that reason that we made two special cases of the $K\times K$ Woodbury kernel: a $2\times 2$ case and a $3\times 3$ case. Because the number of rank-1 updates are known we can unroll and simplify some loops. It also permits us to use explicit expressions for computing the determinants and inverses of the $2\times 2$ and $3\times 3$ matrix $D$ of Eq.~(\ref{eqn:wb-denom}), removing the need for expensive calls to LAPACK for the LU-decomposition and matrix inversion.\\
-				
-				To deal with all the possible cases we made a kernel that combines the Splitting kernel with the WB~$2\times 2$ and $3\times 3$ kernels that we call the ``Blocking''-kernel.
-				
-				To maximise arithmetic intensity the total number of updates is divided first in blocks of 3 rank-1 updates. Each of these blocks are then send to the  WB~$3\times 3$-kernel. If any of these blocks fail due to $\left|\det D\right|<\beta$, the updates in the block are attempted with the Splitting-kernel and the split updates are moved to a queue for later.
-				
-				After all blocks are done we check if the remainder is either 2 or 1 rank-1 updates. If the remainder is 2, the updates are send to the WB~$2\times 2$-kernel. If this kernel fails due to $\left|\det D\right|<\beta$, the last 2 rank-1 updates are also attempted with the Splitting-kernel, any split updates are also moved to the queue for later.
-				
-				If the remainder is 1, the last update attempted with Splitting-kernel, again adding half of it to the queue in case of a split.
-				
-				Then finally, if there are any, the remaining halves in the queue are sent to the Splitting kernel which should always converge.\\
-				
-				There is also a special case for 4 rank-1 updates. Performance measurements have shown that doing 4 rank-1 updates in 2 blocks of 2 rank-1 updates is faster than doing them in a block of 3 and the remaining one with the Splitting kernel. The method is the same as for the general case: if a block of 2 rank-1 updates fails, it is sent to the Splitting kernel and any split updates are moved to a queue to processed in the end.\\
-				
-				The algorithm looks as follows:\\
-				
-\begin{algorithm}[h]
-	\caption{The ``Blocking'' kernel}\label{algo:blocking}
-	\KwData{$A^{-1}$, $\dim A^{-1}$, $\det A^{-1}$, $K$, $U, V$, $\beta$}
-	\KwResult{$\widetilde{A}$, $\det\widetilde{A}$}
-	\textit{first initialisation}:\\
-	number of later updates: $L \gets 0$\;
-	later updates queue: $\{u_l, v_l\} \gets \varnothing$\;
-	\If{$K=4$} {
-		\textbf{call} WB~$2\times 2$ with the  \textbf{first} 2 rank-1 updates\;
-		\If{WB~$2\times 2$ fails} {
-			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{first} 2 rank-1 updates\;
-			\If{any splits} {
-				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
-				increment number of later updates: $L \gets L + (1 \lor 2)$\;
-			}
-		}
-		\textbf{call} WB~$2\times 2$ with the \textbf{last} 2 rank-1 updates\;
-		\If{WB~$2\times 2$ fails} {
-			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{last} 2 rank-1 updates\;
-			\If{any splits} {
-				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
-				increment number of later updates: $L \gets L + (1 \lor 2)$\;
-			}
-		}
-		\If{$L>0$}
-		{
-			\textbf{call} Splitting-kernel\footnotemark[2] using $A^{-1}_{K-L}$, $\dim A^{-1}_{K-L}$, $\det A^{-1}_{K-L} $, $L$, $\{u_l, v_l\}$\;
-		}
-		\textbf{exit}\;
-	}
-\end{algorithm}
-
-
-\begin{algorithm}[H]
-	\textit{second initialisation}:\\
-	number of 3 rank-1 update blocks: $N \gets \lfloor K/3\rfloor$\;
-	remainder: $R\gets K\bmod{3}$\;
-	\For{number of blocks $N$} {
-		\textbf{call} WB~$3\times 3$ for each successive block of 3 rank-1 updates\;
-		\If{WB~$3\times 3$ fails} {
-			\textbf{call} Splitting-kernel\footnotemark[1] with the 3 rank-1 updates of the current block\;
-			\If{any splits} {
-				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
-				increment number of later updates: $L \gets L + (1 \lor 2 \lor 3)$\;
-			}
-		}
-	}
-	\If{$R=2$} {
-		\textbf{call} WB~$2\times 2$ with the \textbf{last} 2 rank-1 updates\;
-		\If{WB~$2\times 2$ fails} {
-			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{last} 2 rank-1 updates\;
-			\If{any splits} {
-				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
-				increment number of later updates: $L \gets L + (1 \lor 2)$\;
-			}
-		}
-	}
-	\Else {
-		\textbf{call} Splitting-kernel\footnotemark[1]\footnotetext{Actually, only the non-recursive part of the Splitting kernel is used here. It doesn't call itself after it applied and/or split the updates. It only populates the update queue and increment the number of later updates if there are splits.} with the \textbf{last} rank-1 update\;
-		\If{a split} {
-			add half of the update $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
-			increment number of later updates: $L \gets L + 1$\;
-		}
-	}
-	\If{$L>0$}
-	{
-		\textbf{call} Splitting-kernel\footnotemark[2]\footnotetext{Here the full recursive version of the Splitting kernel is used.} using $A^{-1}_{K-L}$, $\dim A^{-1}_{K-L}$, $\det A^{-1}_{K-L} $, $L$, $\{u_l, v_l\}$\;
-	}
-	\textbf{exit}\;
-\end{algorithm}
-			 
-    \subsection{Explicit array dimensions and loop bounds}
-    	For the case of Benzene computed on Intel AVX2 we have hard coded the matrix and padding sizes in the source code to assist the compiler to maximise loop-vectorisation. 
-    	 			
-    \subsection{Aligned and restricted dynamic arrays}
-    	All the arrays that are passed are memory aligned and access is restricted to prevent aliasing.
+    \subsection{Vectorisation}
     
-    \subsection{Template to generate kernels for specific sizes}
-    	For the HPC version of the kernels there is a Python script that generates the C-source code for specific system sizes and SIMD architectures. This allows the C-compiler to always know all the loop-bounds at compile time, thereby ensuring that all loops are vectorised.
-			
+      \subsubsection{Zero-padding of arrays}
+      Loops cannot be automatically vectorised completely if the leading dimension of the arrays are not integer multiples of the size of the CPU's vector register. In that case a tail-loop needs to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of extra work by padding vectors and matrices with extra zeros, so that their leading dimensions become integer multiples of the vector register size. Then tail-loops are unnecessary. Even though more work is done vector-instructions are faster than scalar-instructions.\\
+				
+      The amount of zero-padding depends on the size of vector registers of the CPU. For example for an Intel CPU with AVX2 extensions, the size of a vector register is 256~bits. This is equivalent to 8 ints/floats or 4 long ints/doubles 64 bit machine. For AVX512 these numbers double.\\
+      
+      Lets define the size of a vector register as $v$. Then for general $k\times l$, $l\times m $ matrices $A,B$ the amount of zero-padding $p$ on the inner/outer dimension $l$ of $A$/$B$ is equal to
+      \begin{align}
+        p = v-(l\bmod{v})	
+      \end{align}
+      as long as $l$ is not an integer multiple of $v$. In that case $p=0$. So we have that $0 \leq p \leq v-1$. The padded dimension $n$ is then
+      \begin{align}
+      n = l + p
+      \end{align}
+      We can then define the $l\times n$ padding-matrix $P_{1l,n}$ as the augmented matrix
+      \begin{align}
+      	P_{l,n} := \left(I_l\right|0_{l,p})
+      \end{align}
+      where $I_l$ is the $l\times l$ identity-matrix and $0_{l,p}$ is the $l\times p$ null-matrix.
+      The matrix $P_{l,n}$ has the properties such that
+      \begin{align}
+      	P_{l,n}P^\top _{n,l}=I_l
+      \end{align}
+      and
+      \begin{align}
+      	P^\top _{n,l}P_{l,n}=
+      	\begin{bmatrix}
+      			I_l & 0_{l,p} \\
+      			0_{p,l} & 0_{p,p}
+      \end{bmatrix}
+      \end{align}
+      Properly padded matrices can then be simply obtained by multiplying $P_{l,n}$ with $A_{k,l}$ to pad the columns in a case column-major layout is used.
+      \begin{align}
+      	\widetilde{A}_{k,n} &= A_{k,l}P_{l,n}
+      \end{align}
+      or $P^\top_{n,l}$ with $A_{l,m}$
+      \begin{align}
+      	\widetilde{A}_{n,m} &= P^\top_{n,l}A_{l,m}
+      \end{align}
+      to pad the rows in case a row-major layout is used.
+
+      \subsubsection{Pointer aliasing}
+        The compiler is only able to vectorise the loops properly if it knows that the pointers that point to the  arrays are pointing to distinct blocks of memory. In other words, the pointers cannot at any single point during the execution of the function body point to the same memory address. \\
+      
+        If the compiler is not sure of this and the memory of one of the arrays could be accidentally overwritten by using the pointers to other arrays, it will insert extra assembly instructions to make sure that the intended result is guaranteed. This will of course come with a performance cost so we need to prevent this from happening.\\
+      
+        Luckily there is a way to tell the compiler that pointers do not alias by using the \texttt{\_\_restrict} keyword in the pointer arguments of the function header. For example, for two \texttt{double}-pointers this could look like
+      \begin{verbatim}
+  void some_function(double* __restrict data, double* __restrict other_data);
+      \end{verbatim}
+
+      \subsubsection{Contiguous memory and memory alignment}
+        A final issue that can arise when vectorising loops is when the memory of the array is not contiguous and/or the data in the array is not aligned to memory addresses that are predictable. In this case simple pointer arithmetic is not possible and the compiler needs to insert extra assembly code to make sure it fetches the correct data. In that case vector instructions cannot be used and therefore the final code will only be partially vectorised, or not at all.\\
+        
+        Again we helped the compiler by making sure that the arrays contiguous in memory and that the data addresses is properly aligned to \texttt{n}-byte boundaries by declaring, for a $K$ element \texttt{double}-array \texttt{Array} as
+        \begin{verbatim}
+           double __attribute__( (aligned(8)) ) Array[K];
+        \end{verbatim}
+      	 
+    \subsection{Manual loop-unrolling: $2\times 2$ and ~$3\times 3$~WB and the Blocking kernel}
+      For the Woodbury kernel we have improved the performance by considering special cases. Looking at Fig.~\ref{fig:upd_freq}, it is evident that most of the time the number of updates that have to be processed is small, mostly one, two or three updates. It is for that reason that we made two special cases of the $K\times K$ Woodbury kernel: a $2\times 2$ case and a $3\times 3$ case. Because the number of rank-1 updates are known we can unroll and simplify some loops. It also permits us to use explicit expressions for computing the determinants and inverses of the $2\times 2$ and $3\times 3$ matrix $D$ of Eq.~(\ref{eqn:wb-denom}), removing the need for expensive calls to LAPACK for the LU-decomposition and matrix inversion.\\
+    
+      To deal with all the possible cases we made a kernel that combines the Splitting kernel with the WB~$2\times 2$ and $3\times 3$ kernels that we call the ``Blocking''-kernel.\\
+    
+      To maximise arithmetic intensity the total number of updates is divided first in blocks of 3 rank-1 updates. Each of these blocks are then send to the  WB~$3\times 3$-kernel. If any of these blocks fail due to $\left|\det D\right|<\beta$, the updates in the block are attempted with the Splitting-kernel and the split updates are moved to a queue for later.\\
+    
+      After all blocks are done we check if the remainder is either 2 or 1 rank-1 updates. If the remainder is 2, the updates are send to the WB~$2\times 2$-kernel. If this kernel fails due to $\left|\det D\right|<\beta$, the last 2 rank-1 updates are also attempted with the Splitting-kernel, any split updates are also moved to the queue for later.\\
+    
+      If the remainder is 1, the last update attempted with Splitting-kernel, again adding half of it to the queue in case of a split.\\
+    
+      Then finally, if there are any, the remaining halves in the queue are sent to the Splitting kernel which should always converge.\\
+    
+      There is also a special case for 4 rank-1 updates. Performance measurements have shown that doing 4 rank-1 updates in 2 blocks of 2 rank-1 updates is faster than doing them in a block of 3 and the remaining one with the Splitting kernel. The method is the same as for the general case: if a block of 2 rank-1 updates fails, it is sent to the Splitting kernel and any split updates are moved to a queue to processed in the end.\\
+    
+      The algorithm looks as follows:\\
+				
+      \begin{algorithm}[h]
+      	\caption{The ``Blocking'' kernel}\label{algo:blocking}
+      	\KwData{$A^{-1}$, $\dim A^{-1}$, $\det A^{-1}$, $K$, $U, V$, $\beta$}
+      	\KwResult{$\widetilde{A}$, $\det\widetilde{A}$}
+      	\textit{first initialisation}:\\
+      	number of later updates: $L \gets 0$\;
+      	later updates queue: $\{u_l, v_l\} \gets \varnothing$\;
+      	\If{$K=4$} {
+      		\textbf{call} WB~$2\times 2$ with the  \textbf{first} 2 rank-1 updates\;
+      		\If{WB~$2\times 2$ fails} {
+      			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{first} 2 rank-1 updates\;
+      			\If{any splits} {
+      				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
+      				increment number of later updates: $L \gets L + (1 \lor 2)$\;
+      			}
+      		}
+      		\textbf{call} WB~$2\times 2$ with the \textbf{last} 2 rank-1 updates\;
+      		\If{WB~$2\times 2$ fails} {
+      			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{last} 2 rank-1 updates\;
+      			\If{any splits} {
+      				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
+      				increment number of later updates: $L \gets L + (1 \lor 2)$\;
+      			}
+      		}
+      		\If{$L>0$}
+      		{
+      			\textbf{call} Splitting-kernel\footnotemark[2] using $A^{-1}_{K-L}$, $\dim A^{-1}_{K-L}$, $\det A^{-1}_{K-L} $, $L$, $\{u_l, v_l\}$\;
+      		}
+      		\textbf{exit}\;
+      	}
+      \end{algorithm}
+
+      \begin{algorithm}[H]
+      	\textit{second initialisation}:\\
+      	number of 3 rank-1 update blocks: $N \gets \lfloor K/3\rfloor$\;
+      	remainder: $R\gets K\bmod{3}$\;
+      	\For{number of blocks $N$} {
+      		\textbf{call} WB~$3\times 3$ for each successive block of 3 rank-1 updates\;
+      		\If{WB~$3\times 3$ fails} {
+      			\textbf{call} Splitting-kernel\footnotemark[1] with the 3 rank-1 updates of the current block\;
+      			\If{any splits} {
+      				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
+      				increment number of later updates: $L \gets L + (1 \lor 2 \lor 3)$\;
+      			}
+      		}
+      	}
+      	\If{$R=2$} {
+      		\textbf{call} WB~$2\times 2$ with the \textbf{last} 2 rank-1 updates\;
+      		\If{WB~$2\times 2$ fails} {
+      			\textbf{call} Splitting-kernel\footnotemark[1] with the \textbf{last} 2 rank-1 updates\;
+      			\If{any splits} {
+      				add half of those updates $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
+      				increment number of later updates: $L \gets L + (1 \lor 2)$\;
+      			}
+      		}
+      	}
+      	\Else {
+      		\textbf{call} Splitting-kernel\footnotemark[1]\footnotetext{Actually, only the non-recursive part of the Splitting kernel is used here. It doesn't call itself after it applied and/or split the updates. It only populates the update queue and increment the number of later updates if there are splits.} with the \textbf{last} rank-1 update\;
+      		\If{a split} {
+      			add half of the update $u_k$ to the queue: $\{u_l,v_l\} \gets \frac{1}{2}u_k, v_k$\;
+      			increment number of later updates: $L \gets L + 1$\;
+      		}
+      	}
+      	\If{$L>0$}
+      	{
+      		\textbf{call} Splitting-kernel\footnotemark[2]\footnotetext{Here the full recursive version of the Splitting kernel is used.} using $A^{-1}_{K-L}$, $\dim A^{-1}_{K-L}$, $\det A^{-1}_{K-L} $, $L$, $\{u_l, v_l\}$\;
+      	}
+      	\textbf{exit}\;
+      \end{algorithm}
+
+    \subsection{Explicit array dimensions and template generation (WIP Anthony)}
+      When the array dimensions and loop bounds are known to the compiler at compile time it can optimise more aggressively for loop-unrolling and vectorisation, greatly reduce the number of assembly instructions and increase the overall performance.\\
+   
+      To that end we use a script written in Python for the HPC version of the kernels. The script is meant to generate C-source code for specific system sizes and SIMD architectures. This allows the C-compiler to always know the array dimensions and loop-bounds at compile time.
+      			
   \section{Experiments with QMC=Chem}
     QMC=Chem relies heavily on the use of SM for updating the determinants and inverses in the many-body wave function. So any gain in numerical accuracy and/or performance could have a significant impact on its overall performance.\\
     
@@ -593,13 +588,15 @@ or $P^\top_{n,l}$ to pad the rows of $A_{l,m}$
     \subsection{Problems in the current implementation}	
 			
     \subsubsection{Problem 1: Numerical accuracy with large number of determinants}
-      The SM is implemented in QMC=Chem at this moment is equivalent to the reordering method described in Section~\ref{sec:reordering}. In case there is one determinant along the chain that has more than one rank-1 update and a suitable order to apply the $U_k$ cannot be found the whole inverse is recomputed with LAPACK. Then the next determinant in the chain is again updated using SM, if possible. If not, LAPACK, etc. In our particular case for Benzene with 329 determinants and the used value of $\beta=1\times 10^{-3}$ in QMC=Chem, LAPACK was never called mid-chain. But for the case of 15784 determinants, numerical accuracy suffers too much before the end of the chain is reached. LAPACK is called about 20 times per 15784-determinant chain.
+      The SM is implemented in QMC=Chem at this moment is equivalent to the reordering method described in Section~\ref{sec:reordering}. In case there is one determinant along the chain that has more than one rank-1 update and a suitable order to apply the $U_k$ cannot be found the whole inverse is recomputed with LAPACK. Then the next determinant in the chain is again updated using SM, if possible. If not, LAPACK, etc. In our particular case for Benzene with 329 determinants and the used value of $\beta=1\times 10^{-3}$ in QMC=Chem, LAPACK was never called mid-chain. But for the case of 15784 determinants, numerical accuracy suffers too much before the end of the chain is reached. LAPACK is called about 20 times per 15784-determinant chain.\\
+      
+      If we can improve the numerical accuracy of the kernels, calls to LAPACK mid-chain could be reduced as well as is part of its performance cost.
     
     \subsubsection{Problem 2: Possibly unnecessary calls to LAPACK}
       Due to Problem 1, QMC=Chem is loosing more time during LAPACK calls then if it were to use only Sherman-Morrison. The challenge is therefore to first increase the numerical accuracy of the SM method. Once that is achieved, calls to LAPACK should only occur for the first determinant in the chain and thereby increasing the overall performance.
     
     \subsubsection{Problem 3: Low arithmetic intensity}
-      All of the SM methods discussed below have one property in common in that they consist mostly of Matrix-Vector operations (BLAS Level 2). To increase the performance of applying multiple rank-1 updates even more it would be fruitful if we could somehow increase the arithmetic intensity by using Matrix-Matrix operations (BLAS Level 3). One way of doing that is to use the more general Woodbury matrix identity discussed in Section~\ref{sec:intro-woodbury}.
+      All of the SM methods discussed below have one property in common in that they consist mostly of Matrix-Vector operations (BLAS Level 2). To increase the performance of applying multiple rank-1 updates even more it would be fruitful if we could somehow increase the arithmetic intensity by using Matrix-Matrix operations (BLAS Level 3). One way of doing that is to use the more general Woodbury matrix identity discussed in Section~3.5~or~4.2.
 				
     \subsection{Measurement machine architecture and measurement procedure}
       All the measurements have been performed on Intel-based PC with a Core i9-10900 64-bit CPU and 32 GB of non-ECC memory. The CPU has the following vector instruction extensions: SSE4.1, SSE4.2 and AVX2.\\
@@ -673,7 +670,7 @@ Set the global cumulator to 0\;
     	\end{align}
     	
       \subsubsection{329 $\alpha$-determinants}
-        In Table~\ref{tab:fr329} the fail rates are shown for 10384 determinants for the 329 determinant wave function. The Na\"{i}ve-kernel is particularly bad because as the number of rank-1 updates increases along the 329-determinant chain the probability of encountering a rank-1 update that cause singular behaviour increases as well. The Reordering-kernel is already two orders of magnitude better, having only 26 failed updates. The Splitting-- and Blocking-kernel are clearly the best, with only 21 failures. Unlike the failures for the Na\"{i}ve-kernel, these are not failures of the kernels themselves due to denominators that are too small, i.e. condition \ref{cond:break-down}, but due to a too large max norm of the residual matrix $\rho$.\\
+        In Table~\ref{tab:fr329} the fail rates are shown for 10384 determinants in the wave function. The Na\"{i}ve-kernel is particularly bad because as the number of rank-1 updates increases along the 329-determinant chain the probability of encountering a rank-1 update that cause singular behaviour increases as well. The Reordering-kernel is already two orders of magnitude better, having only 26 failed updates. The Splitting-- and Blocking-kernel are clearly the best, with only 21 failures. Unlike the failures for the Na\"{i}ve-kernel, these are not failures of the kernels themselves due to denominators that are too small, i.e. condition \ref{cond:break-down}, but due to a too large max norm of the residual matrix $\rho$.\\
 \begin{table}[h]
 	\centering
 		\begin{tabular}{@{}lrrr@{}}
@@ -686,7 +683,7 @@ Set the global cumulator to 0\;
 			Maponi A3  & 9544 	&  840            &  8.09        \\
 			Maponi A3 \& Splitting & 9921   &  463           &   4.46       \\ \bottomrule
 		\end{tabular}
-		\caption{Fail rates for Benzene with 329 $\alpha$-determinants, 10384 determinants in total, $\beta=1\times10^{-3}$ and $\tau=1\times10^{-3}$.}
+		\caption{Fail rates for Benzene with 10384 $\alpha$-determinants in total, $\beta=1\times10^{-3}$ and $\tau=1\times10^{-3}$.}
 		\label{tab:fr329}
 \end{table}
 				
