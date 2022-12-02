@@ -9,6 +9,7 @@
 
 \usepackage{hyperref}
 \usepackage{hypertoc}
+\usepackage[page, titletoc,title]{appendix}
 
 \numberwithin{figure}{section}
 \numberwithin{table}{section}
@@ -16,7 +17,7 @@
 
 \setlength{\parindent}{0pt}
 
-\title{HPC Sherman-Morrison-Woodbury kernels for QMC applications}
+\title{Sherman-Morrison-Woodbury kernels for QMC and other applications}
 \author{Fran\c{c}ois Coppens\thanks{UVSQ} \and Pablo Oliveira \thanks{UVSQ} \and Eric Petit \thanks{Intel Corp.}} 
 
 
@@ -26,7 +27,6 @@
 	
   \section*{TODO}
     \begin{itemize}           
-       \item Fill 6.
       \item Small extra part (independent) to summarise the GPU results?
     \end{itemize}
     
@@ -408,59 +408,26 @@
     \subsection{Vectorisation}
     
       \subsubsection{Zero-padding of arrays}
-      Loops cannot be automatically vectorised completely if the leading dimension of the arrays are not integer multiples of the size of the CPU's vector register. In that case a tail-loop needs to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of extra work by padding vectors and matrices with extra zeros, so that their leading dimensions become integer multiples of the vector register size. Then tail-loops are unnecessary. Even though more work is done vector-instructions are faster than scalar-instructions.\\
+      Loops cannot be automatically vectorised completely if the leading dimension of an array is not an integer multiple of the CPU's vector register size. In that case a tail-loop needs to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of extra work by padding arrays with extra zeros, so that their leading dimension becomes an integer multiple of the vector register size. Then tail-loops are unnecessary. Even though more work is done, vector-instructions are usually faster than scalar-instructions.\\
 				
       The amount of zero-padding depends on the size of vector registers of the CPU. For example for an Intel CPU with AVX2 extensions, the size of a vector register is 256~bits. This is equivalent to 8 ints/floats or 4 long ints/doubles 64 bit machine. For AVX512 these numbers double.\\
       
-      Lets define the size of a vector register as $v$. Then for general $k\times l$, $l\times m $ matrices $A,B$ the amount of zero-padding $p$ on the inner/outer dimension $l$ of $A$/$B$ is equal to
-      \begin{align}
-        p = v-(l\bmod{v})	
-      \end{align}
-      as long as $l$ is not an integer multiple of $v$. In that case $p=0$. So we have that $0 \leq p \leq v-1$. The padded dimension $n$ is then
-      \begin{align}
-      n = l + p
-      \end{align}
-      We can then define the $l\times n$ padding-matrix $P_{1l,n}$ as the augmented matrix
-      \begin{align}
-      	P_{l,n} := \left(I_l\right|0_{l,p})
-      \end{align}
-      where $I_l$ is the $l\times l$ identity-matrix and $0_{l,p}$ is the $l\times p$ null-matrix.
-      The matrix $P_{l,n}$ has the properties such that
-      \begin{align}
-      	P_{l,n}P^\top _{n,l}=I_l
-      \end{align}
-      and
-      \begin{align}
-      	P^\top _{n,l}P_{l,n}=
-      	\begin{bmatrix}
-      			I_l & 0_{l,p} \\
-      			0_{p,l} & 0_{p,p}
-      \end{bmatrix}
-      \end{align}
-      Properly padded matrices can then be simply obtained by multiplying $P_{l,n}$ with $A_{k,l}$ to pad the columns in a case column-major layout is used.
-      \begin{align}
-      	\widetilde{A}_{k,n} &= A_{k,l}P_{l,n}
-      \end{align}
-      or $P^\top_{n,l}$ with $A_{l,m}$
-      \begin{align}
-      	\widetilde{A}_{n,m} &= P^\top_{n,l}A_{l,m}
-      \end{align}
-      to pad the rows in case a row-major layout is used.
-
+      The datasets we used to benchmark the performance of our kernels were all zero-padded and in the argument list of the kernel calls there are always two arguments that need to be passed. The real dimension of the arrays and the zero-padded dimension, called the leading dimension. A formal treatment of zero-padding can be found in Appendix~A.
+      
       \subsubsection{Pointer aliasing}
         The compiler is only able to vectorise the loops properly if it knows that the pointers that point to the  arrays are pointing to distinct blocks of memory. In other words, the pointers cannot at any single point during the execution of the function body point to the same memory address. \\
       
         If the compiler is not sure of this and the memory of one of the arrays could be accidentally overwritten by using the pointers to other arrays, it will insert extra assembly instructions to make sure that the intended result is guaranteed. This will of course come with a performance cost so we need to prevent this from happening.\\
       
-        Luckily there is a way to tell the compiler that pointers do not alias by using the \texttt{\_\_restrict} keyword in the pointer arguments of the function header. For example, for two \texttt{double}-pointers this could look like
+        Luckily there is a way to tell the compiler that pointers do not alias by using the \texttt{\_\_restrict} keyword in the pointer arguments of the function header. For example, for two \texttt{double}-pointers this could look like:
       \begin{verbatim}
-  void some_function(double* __restrict data, double* __restrict other_data);
+  void some_function(double* __restrict DATA, double* __restrict OTHER_DATA);
       \end{verbatim}
 
       \subsubsection{Contiguous memory and memory alignment}
         A final issue that can arise when vectorising loops is when the memory of the array is not contiguous and/or the data in the array is not aligned to memory addresses that are predictable. In this case simple pointer arithmetic is not possible and the compiler needs to insert extra assembly code to make sure it fetches the correct data. In that case vector instructions cannot be used and therefore the final code will only be partially vectorised, or not at all.\\
         
-        Again we helped the compiler by making sure that the arrays contiguous in memory and that the data addresses is properly aligned to \texttt{n}-byte boundaries by declaring, for a $K$ element \texttt{double}-array \texttt{Array} as
+        Again, we helped the compiler by making sure that the arrays contiguous in memory and that the data addresses is properly aligned to \texttt{n}-byte boundaries by declaring e.g., for a $K$ element \texttt{double}-array \texttt{Array}:
         \begin{verbatim}
            double __attribute__( (aligned(8)) ) Array[K];
         \end{verbatim}
@@ -585,7 +552,8 @@
     	\label{fig:upd_freq}
     \end{figure}
     
-    \subsection{Problems in the current implementation}	
+    \subsection{Problems in the current implementation}
+      We now continue to list the issues in the current implementation of iterative Sherman-Morrison in QMC=Chem. All of these issues have been addressed in our improved kernels.
 			
     \subsubsection{Problem 1: Numerical accuracy with large number of determinants}
       The SM is implemented in QMC=Chem at this moment is equivalent to the reordering method described in Section~\ref{sec:reordering}. In case there is one determinant along the chain that has more than one rank-1 update and a suitable order to apply the $U_k$ cannot be found the whole inverse is recomputed with LAPACK. Then the next determinant in the chain is again updated using SM, if possible. If not, LAPACK, etc. In our particular case for Benzene with 329 determinants and the used value of $\beta=1\times 10^{-3}$ in QMC=Chem, LAPACK was never called mid-chain. But for the case of 15784 determinants, numerical accuracy suffers too much before the end of the chain is reached. LAPACK is called about 20 times per 15784-determinant chain.\\
@@ -741,7 +709,6 @@ Set the global cumulator to 0\;
     		\label{upds_nsplits_cpucycles}
     	\end{figure}
 						
-
 		\subsubsection{Performance stratification}
 		
 		  Looking at Fig.~\ref{fig:pareto_all} of everything together, all kernels, all updates, pass and fail, it you get a good overview of the whole space of possibilities but you cannot see well what is going on for each individual kernel. It is still somewhat instructive because you can see that most of the failures come from Naive and QMC=Chem Naive (covered by Naive). That was to be expected.\\
@@ -767,56 +734,103 @@ Set the global cumulator to 0\;
         For the Later-kernel these bands must be related to the number of recursions because it doesn’t do splitting. For the Blocked kernel it is also splitting but the distribution of the number of splits is modulated by the fact some Woodbury blocks of 3 succeed where there would otherwise be a split. If it is needed I can do the same analysis for the Blocked kernel.
 			
 
-  \section{Discussion and recommendation}
-			\subsection{Final classification of all the kernels}
-		
-			Fig.~\ref{fig:Pareto_passfail_mean}
-		
-			\begin{figure}[h]
-				\centering
-				\includegraphics[width=1\textwidth]{Pareto_passfail_mean.png}
-				\caption{kjkjkj}
-				\label{fig:Pareto_passfail_mean}
-			\end{figure}
-	
+  \section{Classification of all the kernels}
+  
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=1\textwidth]{Pareto_passfail_mean.png}
+      \caption{Numerical accuracy versus performance}
+      \label{fig:Pareto_passfail_mean}
+    \end{figure}
+    
+    To have a good idea of the numerical accuraracy and performance of each of the kernels we have included Figure~\ref{fig:Pareto_passfail_mean}. It is similar to Figure~5.6 but for each kernel we averaged the results for the numerical accuracy along the vertical axis, the element-wise max-norm of $\rho$, and took the median of the number of CPU cycles per rank-1 update along the horizontal axes. This results in an easy to read overview for each kernel. Ideally the best kernel resides in the lower-left corner of the square and the worst possible one in the upper-right corner.\\
+    
+    What is immediately apparent when looking at the left panel, is that even though the inverses computed directly with Intel's MKL are the most accurate (lowest max-norm of $\rho$), it is also the most costly. Similarly, even though the Na\"{i}ve kernel is the fastest, it is also the least accurate in cases where there are more than one rank-1 update.\\
+    
+    To have a better resolution in the part where the remaining kernels are clustered together the MKL kernel has been removed in the second panel. In the the lower-left corner we can see the two kernels Splitting and Blocking+splitting (pink square and red dot). Their performance is similar to the Reordering kernel (green square) but have a better numerical accuracy of at least one order of magnitude. This is good news because it should help with the issues mentioned in Section~5.2.1~and~5.2.2.\\
+    
+    For some reason the Woodbury $K\times K$ kernel performs relatively bad in terms of accuracy and performance.
+    
+    \subsection{Final recommendations}
+      Summarising the results from Table~5.2 and Figure~\ref{fig:Pareto_passfail_mean} we can conclude with the following recommendations
+      
+    \paragraph{Single rank-1 updates} When there are only single rank-1 updates we don't have to worry about the relatively low numerical accuracy of the Na\"{i}ve kernel because this is only due to the possible singular behaviour induced by iterative process in multi rank-1 updates. In this case the \textbf{Na\"{i}ve} will give you the best perforce overall.
+    
+    \paragraph{All other cases} In all other cases the Blocking+Splitting kernel is the best option. It has the same numerical accuracy as the Splitting kernel but with the benefit of being slightly faster due to its higher arithmetic intensity. 
+
   \section{Inclusion in Quantum Monte Carlo Kernel Library}
     Since this work has been funded by and executed in the context of the TREX Centre of Excellence in HPC for Quantum Chemistry, all the computational kernels that are presented in this report (except the kernel outlined in Section~3.2) are included in the TREX Centre of Excellence Quantum Monte Carlo Kernel Library (TREX-CoE/QMCkl). The repository where the QMCkl code and documentation is stored can be found on \url{https://github.com/TREX-CoE/qmckl}.\\
     
     The kernels themselves as well as the code, documentation and regression testes can be found in an `Org-mode' formatted file can be found the \texttt{org/} subdirectory at \url{https://github.com/TREX-CoE/qmckl/blob/master/org/qmckl_sherman_morrison_woodbury.org}.\\
     
     The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}
+    
+\newpage
+\begin{appendices}
+\section{Zero-padding}
+  Lets define the size of a vector register as $v$. Then for general $k\times l$, $l\times m $ matrices $A,B$ the amount of zero-padding $p$ on the inner/outer dimension $l$ of $A$/$B$ is equal to
+  \begin{align}
+  p = v-(l\bmod{v})	
+  \end{align}
+  as long as $l$ is not an integer multiple of $v$. In that case $p=0$. So we have that $0 \leq p \leq v-1$. The padded dimension $n$ is then
+  \begin{align}
+  n = l + p
+  \end{align}
+  We can then define the $l\times n$ padding-matrix $P_{1l,n}$ as the augmented matrix
+  \begin{align}
+  P_{l,n} := \left(I_l\right|0_{l,p})
+  \end{align}
+  where $I_l$ is the $l\times l$ identity-matrix and $0_{l,p}$ is the $l\times p$ null-matrix.
+  The matrix $P_{l,n}$ has the properties such that
+  \begin{align}
+  P_{l,n}P^\top _{n,l}=I_l
+  \end{align}
+  and
+  \begin{align}
+  P^\top _{n,l}P_{l,n}=
+  \begin{bmatrix}
+  I_l & 0_{l,p} \\
+  0_{p,l} & 0_{p,p}
+  \end{bmatrix}
+  \end{align}
+  Properly padded matrices can then be simply obtained by multiplying $P_{l,n}$ with $A_{k,l}$ to pad the columns in a case column-major layout is used.
+  \begin{align}
+  \widetilde{A}_{k,n} &= A_{k,l}P_{l,n}
+  \end{align}
+  or $P^\top_{n,l}$ with $A_{l,m}$
+  \begin{align}
+  \widetilde{A}_{n,m} &= P^\top_{n,l}A_{l,m}
+  \end{align}
+  to pad the rows in case a row-major layout is used.
 
-  \newpage
-  \appendix
+  \subsection{Sherman-Morrison with zero-padding}
 
-\section{Sherman-Morrison with zero-padding}
+    We can now use this to add padding to the Sherman-Morrison formula to make it more efficient in SIMD enabled CPUs. We go from using matrices $S$, $S^{-1}$ and $u$ to using matrices $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{u}$
+    \begin{align}
+    	\left(S+uv^\top \right)^{-1} &= S^{-1}-\frac{S^{-1}uv^\top S^{-1}}{1+v^\top S^{-1}u} \\
+    								&\downarrow \\
+    	\left(\widetilde{S}+\widetilde{u}v^\top \right)^{-1} &= \widetilde{S}^{-1}-\frac{\widetilde{S}^{-1}\widetilde{u}v^\top \widetilde{S}^{-1}}{1+v^\top \widetilde{S}^{-1}\widetilde{u}} \\
+    								&\Updownarrow \\
+    	\left(P^\top S+P^\top uv^\top \right)^{-1} &= S^{-1}P-\frac{S^{-1}PP^\top uv^\top S^{-1}P}{1+v^\top S^{-1}PP^\top u}	
+    \end{align}
+    for padding added to the columns of $S$ and $u$ and to the rows of $S^{-1}$. This insures that
+    \begin{align}
+    	\widetilde{S}^{-1}\widetilde{S} &= S^{-1}PP^\top S \\
+    									&= S^{-1}IS \\
+    									&= S^{-1}S
+    \end{align}
 
-We can now use this to add padding to the Sherman-Morrison formula to make it more efficient in SIMD enabled CPUs. We go from using matrices $S$, $S^{-1}$ and $u$ to using matrices $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{u}$
-\begin{align}
-	\left(S+uv^\top \right)^{-1} &= S^{-1}-\frac{S^{-1}uv^\top S^{-1}}{1+v^\top S^{-1}u} \\
-								&\downarrow \\
-	\left(\widetilde{S}+\widetilde{u}v^\top \right)^{-1} &= \widetilde{S}^{-1}-\frac{\widetilde{S}^{-1}\widetilde{u}v^\top \widetilde{S}^{-1}}{1+v^\top \widetilde{S}^{-1}\widetilde{u}} \\
-								&\Updownarrow \\
-	\left(P^\top S+P^\top uv^\top \right)^{-1} &= S^{-1}P-\frac{S^{-1}PP^\top uv^\top S^{-1}P}{1+v^\top S^{-1}PP^\top u}	
-\end{align}
-for padding added to the columns of $S$ and $u$ and to the rows of $S^{-1}$. This insures that
-\begin{align}
-	\widetilde{S}^{-1}\widetilde{S} &= S^{-1}PP^\top S \\
-									&= S^{-1}IS \\
-									&= S^{-1}S
-\end{align}
+  \subsection{Woodbury with zero-padding}
+    For the Woodbury formula we proceed in the same way. The matrices $S$, $S^{-1}$ and $U$ are replaced by $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{U}$
+    \begin{align}
+    \left(S+UV\right)^{-1} &= S^{-1} - S^{-1}U(I+VS^{-1}U)^{-1}VS^{-1}\\
+    	&\downarrow \\
+    \left(\widetilde{S}+\widetilde{U}V\right)^{-1} &= \widetilde{S}^{-1} - \widetilde{S}^{-1}\widetilde{U}(I+V\widetilde{S}^{-1}\widetilde{U})^{-1}V\widetilde{S}^{-1} \\
+    		&\Updownarrow \\
+    \left(P^\top S+P^\top UV\right)^{-1} &= S^{-1}P - S^{-1}PP^\top U(I+VS^{-1}PP^\top U)^{-1}VS^{-1}P
+    \end{align}
+\end{appendices}
 
-\section{Woodbury with zero-padding}
-For the Woodbury formula we proceed in the same way. The matrices $S$, $S^{-1}$ and $U$ are replaced by $\widetilde{S}$, $\widetilde{S}^{-1}$ and $\widetilde{U}$
-\begin{align}
-\left(S+UV\right)^{-1} &= S^{-1} - S^{-1}U(I+VS^{-1}U)^{-1}VS^{-1}\\
-	&\downarrow \\
-\left(\widetilde{S}+\widetilde{U}V\right)^{-1} &= \widetilde{S}^{-1} - \widetilde{S}^{-1}\widetilde{U}(I+V\widetilde{S}^{-1}\widetilde{U})^{-1}V\widetilde{S}^{-1} \\
-		&\Updownarrow \\
-\left(P^\top S+P^\top UV\right)^{-1} &= S^{-1}P - S^{-1}PP^\top U(I+VS^{-1}PP^\top U)^{-1}VS^{-1}P
-\end{align}
-
-\clearpage
 \addcontentsline{toc}{section}{References}
 \bibliographystyle{abbrv}
 \bibliography{SMWB_report.bib}
