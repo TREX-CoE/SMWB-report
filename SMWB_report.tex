@@ -20,7 +20,6 @@
 \title{Sherman-Morrison-Woodbury kernels for QMC and other applications}
 \author{Fran\c{c}ois Coppens\thanks{UVSQ} \and Pablo Oliveira \thanks{UVSQ} \and Eric Petit \thanks{Intel Corp.}} 
 
-
 \begin{document}
 	\maketitle
 	\tableofcontents
@@ -35,12 +34,12 @@
   \section{Aims and contributions}      
     This work has been executed in the context of the TREX-CoE\cite{trex-coe}. To that end we aim to address the following goals. To
     \begin{itemize}
-      \item solve a numerical problem that exists in the Sherman-Morrison method, as implemented and used extensively in the QMC=Chem[add\_ref] software package,
+      \item solve a numerical problem that exists in the Sherman-Morrison method, as implemented and used extensively in the QMC=Chem\cite{qmc-chem} software package,
       \item extend and generalise this method to include higher-rank cases (Woodbury matrix identity),
       \item implement these methods and optimise them to run efficiently on high performance computing architectures.
     \end{itemize}
       
-      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method. However, it is often used in other Quantum Monte Carlo applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo Kernel Library[add\_ref].\\
+      QMC=Chem is used as a test case to address the numerical problems in its implementation of the Sherman-Morrison method. However, it is often used in other Quantum Monte Carlo applications as well. Indeed, the method itself is more general and can be employed in many other application domains. Because of this, these algorithms have been made available to the public in the form of computational kernels inside the Quantum Monte Carlo Kernel Library\cite{qmckl}.\\
       
       Finally, we include performance-- and numerical benchmarks to demonstrate that the numerical issues that have been identified in QMC=Chem have been resolved and the stated objectives have been met.
 
@@ -699,7 +698,7 @@ Set the global cumulator to 0\;
     
     	In Fig.~\ref{fig:perf_per_update} is shown the number of CPU-cycles per rank-1 update versus the number of rank-1 updates for various kernels. Focussing our attention on the $3^\mathrm{rd}$ there are two main branches. One is centred around 250 CPU-cycles/rank-1 update. For one rank-1 update the spread is due to variability of the machine itself. For the cases of more than one rank-1 update this is mainly due to the number of splits for the Splitting kernel, or the number of failed blocks in the Blocking kernel.\\
     					
-    	Looking at the left two panels of Fig.~\ref{upds_nsplits_cpucycles}, for the case of Benzene, 329 determinants the maximum number of splits is always one less than the number of updates, in case of the Splitting kernel. The Blocking kernel seems to get away with less splits in general, except in the case of two rank-1 updates. On the right two panels of Fig.~\ref{upds_nsplits_cpucycles} we plotted the average number of CPU cycles per rank-1 update as a function of the number of splits. In  the \textsc{passing} cases the number of CPU cycles per update increase linearly as the number of splits increases, up until 6 splits where it plateaus. For the \textsc{failing} cases there are never more than 3 splits, but most of these occurences are clustered around 0--2 splits and take an average of about 300 CPU cycles per update. 
+    	Looking at the left two panels of Fig.~\ref{upds_nsplits_cpucycles}, for the case of Benzene, 329 determinants the maximum number of splits is always one less than the number of updates, in case of the Splitting kernel. The Blocking kernel seems to get away with less splits in general, except in the case of two rank-1 updates. On the right two panels of Fig.~\ref{upds_nsplits_cpucycles} we plotted the average number of CPU cycles per rank-1 update as a function of the number of splits. In  the \textsc{passing} cases the number of CPU cycles per update increase linearly as the number of splits increases, up until 6 splits where it plateaus. For the \textsc{failing} cases there are never more than 3 splits, but most of these occurrences are clustered around 0--2 splits and take an average of about 300 CPU cycles per update. 
     
     	\begin{figure}[h]
     		\centering
@@ -708,29 +707,26 @@ Set the global cumulator to 0\;
     		\label{upds_nsplits_cpucycles}
     	\end{figure}
 						
-		\subsubsection{Performance stratification}
-		
-		  Looking at Fig.~\ref{fig:pareto_all} of everything together, all kernels, all updates, pass and fail, it you get a good overview of the whole space of possibilities but you cannot see well what is going on for each individual kernel. It is still somewhat instructive because you can see that most of the failures come from Naive and QMC=Chem Naive (covered by Naive). That was to be expected.\\
+      \subsubsection{Performance stratification}
+        When we plot the element-wise max-norm of the residual matrix $\rho$ against the number of CPU cycles for all kernels, we get the picture that is shown in Figure~\ref{fig:pareto_all}. Each coloured point on this plane corresponds to exactly one update chain computed for the kernel corresponding to that colour. Where this point is located on the plain, together with all the others of the same colour, eventually determines the numerical accuracy and performance of the kernel.
 		\begin{figure}[H]
-			\includegraphics[width=0.5\linewidth]{pareto_pass_fail_all.png}	
-			\caption{The accuracy ($||SS^{-1}-I||_\mathrm{max}$) vs. the performance for all tested kernels, above and below the acceptance tolerance.}
-			\label{fig:pareto_all}
+		  \centering
+		  \includegraphics[width=\linewidth]{pareto_pass_fail_all.png}	
+		  \caption{The element-wise max-norm of the residual matrix $\rho$ as a function of the number of CPU cycles (averaged) for all tested kernels.}
+		  \label{fig:pareto_all}
 		\end{figure}
+		When looking at Figure~\ref{fig:pareto_all} carefully we can see clusters of vertical stripes, except for the LAPACK kernel. Each of these clusters corresponds to a specific set of circumstances. E.g. the green cluster of stripes in the top-left corner are all above the tolerance threshold $\tau$ and are failing update-chains. The vertical stripes are formed by how many updates were applied successfully by the ``Na\"{i}ve kernel'' before a break-down occurred.\\
 		
-        In Fig.~\ref{fig:pareto_pass} we are only looking at the cycles that passed. It is already a better but is still a bit messy. Not sure this plot is much better than the first one. Maybe we should not include it.\\
+		The cluster in the bottom-left between 200 and 300 CPU cycles/update are the update chains that correspond the the first ones after a full inversion with LAPACK and have only one rank-1 update. So they did not have the time to accumulate any numerical noise, hence their relatively small residual.\\
+		
+		Then there is the big cluster in the middle covering most remaining cases. The light blue stripes are formed by the recursions of the ``Reordering'' kernel. Some update chains are harder than others so sometimes it takes  more than a few recursive calls to find a successful order. This accounts for the rather wider range of required CPU cycles/update than that of the ``Splitting'' and ``Blocking+splitting'' kernels.
 		\begin{figure}[H]
-			\includegraphics[width=0.5\linewidth]{pareto_pass_all.png}	
-			\caption{The accuracy ($||SS^{-1}-I||_\mathrm{max}$) vs. the performance for all tested kernels, above and below the acceptance tolerance.}
-			\label{fig:pareto_pass}
+		  \centering
+		  \includegraphics[width=\linewidth]{stratification.png}	
+		  \caption{Performance stratification caused by update splitting.}
+		  \label{fig:stratification}
 		\end{figure}
-		
-        In the third plot I focused on only the passed updates with 9 cycles. This is already much cleaner and gives a better idea of what the kernels are doing. And it is here were you can clearly see some stratification of the clusters for each individual kernel, except for the 2 Naive ones and LAPACK.\\
-
-        To understand the stratification I thought of zooming in on one kernel to see if it had something to do with splitting. So the next plot only shows the Pareto plot for all passed  9-update cycles of the splitting kernel. Here you can see clearly 4 distinct bands. First I thought this was linked to the maximum number of splits for a given 9-update cycle. But this is not the case because the maximum number of splits is 8 and there are not 9 bands (one extra for 0 splits). Then I thought it could be related to the number of recursions the kernel calls itself, but this was also not the case because the maximum number of recursions is only 1x: all splits happen in the first pass and get completed in the second pass (for 9-update cycles). Finally it is related to the number of splits, but not all number of splits happen. In fact only 0, 1, 3, 7 and 8 splits happen for 9-update cycles. So when you then split out the data for these number of splits you get the final plot.\\
-        
-        In the last plot you can clearly see that the bands correspond to each bin of number of splits. There are actually 5 bands, but the band for 8-splits only contains 2 points and is very close to the points for the 7-split band. If there were more points I am sure they. would form a band as well. I am pretty convinced this also explains the bands in the performance plots for splitting\\
-
-        For the Later-kernel these bands must be related to the number of recursions because it doesn’t do splitting. For the Blocked kernel it is also splitting but the distribution of the number of splits is modulated by the fact some Woodbury blocks of 3 succeed where there would otherwise be a split. If it is needed I can do the same analysis for the Blocked kernel.
+		To look a bit closer at the big cluster in the middle we selected only the update-chains containing nine rank-1 updates and only plotted the ones that passed with the `'Splitting'' kernel. This is shown in the left panel of Figure~\ref{fig:stratification}. In this case the vertical stripes are formed by splits, where the spacing between the stripes correspond to how many times the kernel had to split an update before it could be successfully applied. Not every possible number of splits occurs, as can be seen in the right panel of Figure~\ref{fig:stratification}. Here we separated the points by the number of splits. In the case of nine rank-1 updates, only 0, 1, 3, 7 and 8 splits occur, hence difference in the spacing of the stripes.
 
   \section{Classification of all the kernels}
   
@@ -762,8 +758,7 @@ Set the global cumulator to 0\;
     The kernels themselves as well as the code, documentation and regression testes can be found in an `Org-mode' formatted file can be found the \texttt{org/} subdirectory at \url{https://github.com/TREX-CoE/qmckl/blob/master/org/qmckl_sherman_morrison_woodbury.org}.\\
     
     The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}
-    
-  \newpage
+  
   \section{Preliminary work on $K\times K$ Woodbury on the GPU}
     There are some preliminary results after a first attempt on porting the $K\times K$ Woodbury kernel to GPU architechtures. Since this is ongoing work it was not included in Section~4, nor yet in the QMCkl. The ultimate goal would be to have a GPU implementation that performs faster, on a general GPU architecture,  under typical workloads, than on a (multi-core) CPU. Preferably it uses only open standards like OpenMP Offload, OpenACC, OpenCL or SYCL to increase portability and prevent a ``vendor lock-in''. If and when such a version is realised, it can be added to the QMCkl.\\
       
