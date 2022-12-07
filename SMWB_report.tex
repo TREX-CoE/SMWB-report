@@ -27,12 +27,13 @@
 	
   \section*{TODO}
     \begin{itemize}           
-      \item Small extra part (independent) to summarise the GPU results?
+      \item Collect all HPC kernels in a compilable file and send to Pablo. Make sure the function APIs are identical to the ones in QMCkl so we can easily replace (copy/paste) them later.
+      \item Remove this TODO list from the final version...
     \end{itemize}
     
   \newpage
   \section{Aims and contributions}      
-    This work has been executed in the context of the TREX-CoE[add\_ref]. To that end we aim to address the following goals. To
+    This work has been executed in the context of the TREX-CoE\cite{trex-coe}. To that end we aim to address the following goals. To
     \begin{itemize}
       \item solve a numerical problem that exists in the Sherman-Morrison method, as implemented and used extensively in the QMC=Chem[add\_ref] software package,
       \item extend and generalise this method to include higher-rank cases (Woodbury matrix identity),
@@ -403,17 +404,16 @@
 		
   \section{HPC versions}
     To run with optimum efficiency on HPC architectures we used several well known techniques. Most of the time was spent optimising the vectorisation that is discussed next. Manual loop-unrolling for a fixed number of updates in the WB-kernel is discussed in Section~4.2. To fine tune the performance even more and have specialised kernels for every system size we use source-code generation that is discussed in Section~4.3.
-		    
-		    
+
     \subsection{Vectorisation}
-    
+        To vectorise the loops fully a few things need the be setup correctly simultaneously. Only then all the obstacles for the compiler are removed and it can do its work the way we want.
       \subsubsection{Zero-padding of arrays}
       Loops cannot be automatically vectorised completely if the leading dimension of an array is not an integer multiple of the CPU's vector register size. In that case a tail-loop needs to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of extra work by padding arrays with extra zeros, so that their leading dimension becomes an integer multiple of the vector register size. Then tail-loops are unnecessary. Even though more work is done, vector-instructions are usually faster than scalar-instructions.\\
 				
       The amount of zero-padding depends on the size of vector registers of the CPU. For example for an Intel CPU with AVX2 extensions, the size of a vector register is 256~bits. This is equivalent to 8 ints/floats or 4 long ints/doubles 64 bit machine. For AVX512 these numbers double.\\
       
       The datasets we used to benchmark the performance of our kernels were all zero-padded and in the argument list of the kernel calls there are always two arguments that need to be passed. The real dimension of the arrays and the zero-padded dimension, called the leading dimension. A formal treatment of zero-padding can be found in Appendix~A.
-      
+
       \subsubsection{Pointer aliasing}
         The compiler is only able to vectorise the loops properly if it knows that the pointers that point to the  arrays are pointing to distinct blocks of memory. In other words, the pointers cannot at any single point during the execution of the function body point to the same memory address. \\
       
@@ -523,7 +523,7 @@
       When the array dimensions and loop bounds are known to the compiler at compile time it can optimise more aggressively for loop-unrolling and vectorisation, greatly reduce the number of assembly instructions and increase the overall performance.\\
    
       To that end we use a script written in Python for the HPC version of the kernels. The script is meant to generate C-source code for specific system sizes and SIMD architectures. This allows the C-compiler to always know the array dimensions and loop-bounds at compile time.
-      			
+            			
   \section{Experiments with QMC=Chem}
     QMC=Chem relies heavily on the use of SM for updating the determinants and inverses in the many-body wave function. So any gain in numerical accuracy and/or performance could have a significant impact on its overall performance.\\
     
@@ -555,15 +555,14 @@
     \subsection{Problems in the current implementation}
       We now continue to list the issues in the current implementation of iterative Sherman-Morrison in QMC=Chem. All of these issues have been addressed in our improved kernels.
 			
-    \subsubsection{Problem 1: Numerical accuracy with large number of determinants}
-      The SM is implemented in QMC=Chem at this moment is equivalent to the reordering method described in Section~\ref{sec:reordering}. In case there is one determinant along the chain that has more than one rank-1 update and a suitable order to apply the $U_k$ cannot be found the whole inverse is recomputed with LAPACK. Then the next determinant in the chain is again updated using SM, if possible. If not, LAPACK, etc. In our particular case for Benzene with 329 determinants and the used value of $\beta=1\times 10^{-3}$ in QMC=Chem, LAPACK was never called mid-chain. But for the case of 15784 determinants, numerical accuracy suffers too much before the end of the chain is reached. LAPACK is called about 20 times per 15784-determinant chain.\\
+    \subsubsection{Issue 1: Numerical accuracy with large number of determinants}
+      The SM is implemented in QMC=Chem at this moment is equivalent to the reordering method described in Section~\ref{sec:reordering}. In case there is one determinant along the chain that has more than one rank-1 update and a suitable order to apply the $U_k$ cannot be found the whole inverse is recomputed with LAPACK. Then the next determinant in the chain is again updated using SM, if possible. If not, LAPACK, etc. In our particular case for Benzene with 329 determinants and the used value of $\beta=1\times 10^{-3}$ in QMC=Chem, LAPACK was never called mid-chain. But for the case of 15784 determinants, numerical accuracy suffers too much before the end of the chain is reached. LAPACK is called about 20 times per 15784-determinant chain.\\    
+    
+      Because of this, QMC=Chem is loosing more time during LAPACK calls then if it were to use only Sherman-Morrison. The challenge is therefore to first increase the numerical accuracy of the SM method. Once that is achieved, calls to LAPACK should only occur for the first determinant in the chain and thereby increasing the overall performance.\\
       
       If we can improve the numerical accuracy of the kernels, calls to LAPACK mid-chain could be reduced as well as is part of its performance cost.
     
-    \subsubsection{Problem 2: Possibly unnecessary calls to LAPACK}
-      Due to Problem 1, QMC=Chem is loosing more time during LAPACK calls then if it were to use only Sherman-Morrison. The challenge is therefore to first increase the numerical accuracy of the SM method. Once that is achieved, calls to LAPACK should only occur for the first determinant in the chain and thereby increasing the overall performance.
-    
-    \subsubsection{Problem 3: Low arithmetic intensity}
+    \subsubsection{Issue 2: Low arithmetic intensity (HPC)}
       All of the SM methods discussed below have one property in common in that they consist mostly of Matrix-Vector operations (BLAS Level 2). To increase the performance of applying multiple rank-1 updates even more it would be fruitful if we could somehow increase the arithmetic intensity by using Matrix-Matrix operations (BLAS Level 3). One way of doing that is to use the more general Woodbury matrix identity discussed in Section~3.5~or~4.2.
 				
     \subsection{Measurement machine architecture and measurement procedure}
@@ -732,7 +731,6 @@ Set the global cumulator to 0\;
         In the last plot you can clearly see that the bands correspond to each bin of number of splits. There are actually 5 bands, but the band for 8-splits only contains 2 points and is very close to the points for the 7-split band. If there were more points I am sure they. would form a band as well. I am pretty convinced this also explains the bands in the performance plots for splitting\\
 
         For the Later-kernel these bands must be related to the number of recursions because it doesn’t do splitting. For the Blocked kernel it is also splitting but the distribution of the number of splits is modulated by the fact some Woodbury blocks of 3 succeed where there would otherwise be a split. If it is needed I can do the same analysis for the Blocked kernel.
-			
 
   \section{Classification of all the kernels}
   
@@ -765,6 +763,53 @@ Set the global cumulator to 0\;
     
     The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}
     
+  \newpage
+  \section{Preliminary work on $K\times K$ Woodbury on the GPU}
+    There are some preliminary results after a first attempt on porting the $K\times K$ Woodbury kernel to GPU architechtures. Since this is ongoing work it was not included in Section~4, nor yet in the QMCkl. The ultimate goal would be to have a GPU implementation that performs faster, on a general GPU architecture,  under typical workloads, than on a (multi-core) CPU. Preferably it uses only open standards like OpenMP Offload, OpenACC, OpenCL or SYCL to increase portability and prevent a ``vendor lock-in''. If and when such a version is realised, it can be added to the QMCkl.\\
+      
+    The starting point has been the implementation of Algorithm~5 on the CPU. We used OpenMP to offload the data and the loops that can not be written in terms of standard BLAS/LAPACK-calls to the GPU. The parts that are expressed as standard BLAS/LAPCK calls have been replaced with calls to NVIDIA's cuBLAS/cuSOLVER libraries.\\
+    
+    The the GPU specific hard-- and software used for the performance measurements are the same as mentioned in Section~5.2 with the addition of a NVIDIA GPU using the Ampere architecture (GA102) with 10GB of device memory and CUDA Compute Capability 8.6. The GPU-ready code was compiled with NVIDIA's \texttt{nvc/nvc++} compilers and profiled/analysed with NVIDIA Nsight Systems/Compute and NVIDIA Tools Extension (NVTX) included in the NVIDIA HPC SDK version 22.7 (July 2022).
+  
+    \subsection{GPU warm-up effects}
+      \begin{figure}
+        \centering
+        \includegraphics[width=0.51\textwidth]{wbkxk_gpu_warmup_better.pdf}
+        \caption{GPU warm-up effects for smaller matrices.}
+        \label{fig:gpu-warmup}
+      \end{figure}
+     In Figure~\ref{fig:gpu-warmup} we show the average number of CPU cycles as a function of the matrix-size for different updates loads and repetition number. The number of rank-1 updates for a particular workload and matrix size is $N_\text{updates}=l\times M$, where $l$ is the load and $M$ is the size of the matrix. The load and matrix sizes are chosen such that $N_\text{updates}$ is always an integer. The sizes and loads that were used are $M\in\{32,64,128,256,512,1024,2048,4096,8192\}$ and $l\in\{0.25,0.50,0.75\}$. The repetition means how many times the kernel was executed for a specific matrix size and update load. We chose 1, 10 and 100 repetitions. The final number of CPU cycles have been divided by the number of repetitions.
+     It is clear that the number of repetitions matters for smaller matrices. The larger the number of repetitions, the lower the averaged number of CPU cycles. Around matrix sizes of 2048 the warm-up effect disappears and it it is the update load that determines the final performance.\\
+     
+     A possible explanation could be that for larger matrices the execution time of the kernel is already of the same order of magnitude as the warm-up itself, which happens too fast compared the timescales of the execution of the larger ($>1024\times1024$) matrices. 
+    \subsection{Multi-threaded CPU vs GPU}
+      \begin{figure}
+        \centering
+        \includegraphics[width=\textwidth]{CPU_vs_GPU.pdf}
+        \caption{GPU warm-up effects.}
+        \label{fig:gpu-vs-cpu}
+      \end{figure}
+      Finally, in Figure~\ref{fig:gpu-vs-cpu} we compare the performance curves of a full matrix inversion using MKL with 10 OpenMP threads on the CPU, $K\times K$ Woodbury with 10 OpenMP threads on the CPU and $K\times K$ Woodbury on the GPU. The curves for the 25\% workloads are in blue, the 50\% in green and the 75\% in red. For small matrices the GPU kernel is always slower, but performs more or less the same for all workloads. MKL inversion looks to be the best for all workloads. Up until matrices of size 512 the Woodbury  CPU kernel seem to be doing best for workloads up to 50\% and performs equivalent to MKL at 75\%. From matrices of size 1024 and upwards the Woodbury GPU kernel starts to be at comparable performance with the CPU kernels. For very large matrices of size around 8196 the Woodbury GPU kernel is the fastest for 25\% and 50\% workloads, but MKL is faster for 75\%.
+      \begin{table}[H]
+        \centering
+        \begin{tabular}{lrrr}
+          \textbf{Kernel} & \textbf{Time (s)} & \textbf{Time (cc)} & \textbf{Speed-up}\\
+            Sequential & 454.352 & $1.996482\times10^{11}$ & 1\\
+            OpenMP, 10 threads & 108.040 & $4.714318\times10^{10}$ & 4.23\\
+            GPU & 102.776 & $3.395985\times10^{10}$ & 5.88
+        \end{tabular}
+        \caption{$K\!\times\!K$ Woodbury for 1 repetition, matrix size: $16384\times16384$, $4096$ updates (25\%)}
+        \label{tab:cpu-vs-gpu}
+      \end{table}
+      From Table~\ref{tab:cpu-vs-gpu} it is clear that the $K\!\times\!K$ Woodbury kernel on the GPU in its current state is only marginally faster than the OpenMP threaded version, running on 10 threads. More analysis with profiling tools like NSight Systems/Compute and MAQAO is needed to find out if
+      \begin{enumerate}
+        \item we can model/predict what acceleration we could reasonably expect from a kernel like this on GPU architechtures,
+        \item in order to know how far away we are from optimal performance,
+        \item we are using open programming models like OpenMP Offload, OpenACC correctly,
+        \item if there are problems with their implementation in the used compilers,
+        \item we need to resort to lower-level programming using C++ language extensions like CUDA, OpenCL or SYCL.
+      \end{enumerate}
+
 \newpage
 \begin{appendices}
 \section{Zero-padding}
