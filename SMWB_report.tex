@@ -753,11 +753,11 @@ Set the global cumulator to 0\;
     \paragraph{All other cases} In all other cases the Blocking+Splitting kernel is the best option. It has the same numerical accuracy as the Splitting kernel but with the benefit of being slightly faster due to its higher arithmetic intensity. 
 
   \section{Inclusion in Quantum Monte Carlo Kernel Library}
-    Since this work has been funded by and executed in the context of the TREX Centre of Excellence in HPC for Quantum Chemistry, all the computational kernels that are presented in this report (except the kernel outlined in Section~3.2) are included in the TREX Centre of Excellence Quantum Monte Carlo Kernel Library (TREX-CoE/QMCkl). The repository where the QMCkl code and documentation is stored can be found on \url{https://github.com/TREX-CoE/qmckl}.\\
+    Since this work has been funded by and executed in the context of the TREX Centre of Excellence in HPC for Quantum Chemistry\cite{trex-coe}, all the computational kernels that are presented in this report (except the kernel outlined in Section~3.2) are included in the TREX Centre of Excellence Quantum Monte Carlo Kernel Library\cite{qmckl} (TREX-CoE/QMCkl). The repository where the QMCkl code and documentation is stored can be found on \url{https://github.com/TREX-CoE/qmckl}.\\
     
     The kernels themselves as well as the code, documentation and regression testes can be found in an `Org-mode' formatted file can be found the \texttt{org/} subdirectory at \url{https://github.com/TREX-CoE/qmckl/blob/master/org/qmckl_sherman_morrison_woodbury.org}.\\
     
-    The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}
+    The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}.
   
   \section{Preliminary work on $K\times K$ Woodbury on the GPU}
     There are some preliminary results after a first attempt on porting the $K\times K$ Woodbury kernel to GPU architechtures. Since this is ongoing work it was not included in Section~4, nor yet in the QMCkl. The ultimate goal would be to have a GPU implementation that performs faster, on a general GPU architecture,  under typical workloads, than on a (multi-core) CPU. Preferably it uses only open standards like OpenMP Offload, OpenACC, OpenCL or SYCL to increase portability and prevent a ``vendor lock-in''. If and when such a version is realised, it can be added to the QMCkl.\\
