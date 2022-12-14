@@ -11,6 +11,14 @@
 \usepackage{hypertoc}
 \usepackage[page, titletoc,title]{appendix}
 
+
+\usepackage{minted}
+\usemintedstyle{manni}
+%\usemintedstyle{colorful}
+\definecolor{LightGray}{gray}{0.95}
+\setminted{baselinestretch=1.2, bgcolor=LightGray}
+
+
 \numberwithin{figure}{section}
 \numberwithin{table}{section}
 
@@ -21,15 +29,9 @@
 \author{Fran\c{c}ois Coppens\thanks{UVSQ} \and Pablo Oliveira \thanks{UVSQ} \and Eric Petit \thanks{Intel Corp.}} 
 
 \begin{document}
-	\maketitle
-	\tableofcontents
-	
-  \section*{TODO}
-    \begin{itemize}           
-      \item Collect all HPC kernels in a compilable file and send to Pablo. Make sure the function APIs are identical to the ones in QMCkl so we can easily replace (copy/paste) them later.
-      \item Remove this TODO list from the final version...
-    \end{itemize}
-    
+  \maketitle
+  \tableofcontents
+
   \newpage
   \section{Aims and contributions}      
     This work has been executed in the context of the TREX-CoE\cite{trex-coe}. To that end we aim to address the following goals. To
@@ -76,7 +78,7 @@
 			
 			Common manipulations of the many-body system to move towards a lower total energy are moving single electrons and/or manipulating electron orbitals. This corresponds to changes either in the rows or the columns in the Slater-matrix. Whenever there is a change in the Slater-matrix due to one these manipulations, the inverse of the Slater-matrix needs to be re-computed.\\
 			
-			A full inverse can be computed with software libraries like LAPACK[ref here] or MKL[ref here], but it turns out that we do not need to recompute the entire inverse matrix. We can use the Sherman-Morrison formula to update the old inverse Slater-matrix using the changes of the Slater-matrix. This turns out to be much less computationally expensive in most cases than recomputing from scratch the whole inverse Slater-matrix from the updated Slater-Matrix.
+			A full inverse can be computed with software libraries like LAPACK\cite{lapack} or MKL\cite{intel-mkl}, but it turns out that we do not need to recompute the entire inverse matrix. We can use the Sherman-Morrison formula to update the old inverse Slater-matrix using the changes of the Slater-matrix. This turns out to be much less computationally expensive in most cases than recomputing from scratch the whole inverse Slater-matrix from the updated Slater-Matrix.
 			
 		\subsection{The Sherman-Morrison formula}\label{sec:problem}
 			
@@ -407,7 +409,7 @@
     \subsection{Vectorisation}
         To vectorise the loops fully a few things need the be setup correctly simultaneously. Only then all the obstacles for the compiler are removed and it can do its work the way we want.
       \subsubsection{Zero-padding of arrays}
-      Loops cannot be automatically vectorised completely if the leading dimension of an array is not an integer multiple of the CPU's vector register size. In that case a tail-loop needs to be inserted and this will have a negative impact on performance. It is then sometimes better to add a small amount of extra work by padding arrays with extra zeros, so that their leading dimension becomes an integer multiple of the vector register size. Then tail-loops are unnecessary. Even though more work is done, vector-instructions are usually faster than scalar-instructions.\\
+      Loops in our SM kernel were not automatically vectorised completely when the leading dimension of an array was not an integer multiple of the CPU's vector register size. In this case a tail-loop was inserted and this has a negative impact on performance. It is then better to add a small amount of extra work by padding the arrays with extra zeros, so that their leading dimension becomes an integer multiple of the vector register size. Then tail-loops are unnecessary. Even though more work is done, vector-instructions are usually faster than scalar-instructions.\\
 				
       The amount of zero-padding depends on the size of vector registers of the CPU. For example for an Intel CPU with AVX2 extensions, the size of a vector register is 256~bits. This is equivalent to 8 ints/floats or 4 long ints/doubles 64 bit machine. For AVX512 these numbers double.\\
       
@@ -518,10 +520,31 @@
       	\textbf{exit}\;
       \end{algorithm}
 
-    \subsection{Explicit array dimensions and template generation (WIP Anthony)}
+    \subsection{Explicit array dimensions and kernel-template generation}
       When the array dimensions and loop bounds are known to the compiler at compile time it can optimise more aggressively for loop-unrolling and vectorisation, greatly reduce the number of assembly instructions and increase the overall performance.\\
    
-      To that end we use a script written in Python for the HPC version of the kernels. The script is meant to generate C-source code for specific system sizes and SIMD architectures. This allows the C-compiler to always know the array dimensions and loop-bounds at compile time.
+      To that end a Python script is used to automatically generate C-source code for each specific system size. This allows the C-compiler to know always the array dimensions and loop-bounds at compile time. For the users a general kernel will be exposed in the QMCkl that contains a switch-mechanism that calls the internal specialised kernels that were generated by the Python script. A simple example of how this is done in C, for the fictitious kernel \texttt{kernel(size, other\_parameters)}, is shown in Listing~\ref{lst:func_select}.\\
+                  
+      As of the writing of this report, the automatic generation and selection of size-specific kernels is not able to deal yet with array padding. This is still a work in progress and will be added to the QMCkl when it is ready. 
+
+      \begin{listing}[H]
+        \begin{minted}{c}
+          double kernel(size, other_parameters)
+          {
+              switch(size)
+              {
+                  case 1: return kernel_1(other_parameters);
+                  case 2: return kernel_2(other_parameters);
+                                  ...
+                                  ...
+                                  ...
+                  case n: return kernel_n(other_parameters);
+              }
+          }
+        \end{minted}
+        \caption{Automatic kernel selection based on the function argument \texttt{size}.}
+        \label{lst:func_select}
+      \end{listing}
             			
   \section{Experiments with QMC=Chem}
     QMC=Chem relies heavily on the use of SM for updating the determinants and inverses in the many-body wave function. So any gain in numerical accuracy and/or performance could have a significant impact on its overall performance.\\
@@ -531,7 +554,7 @@
     We then proceed with explaining the exiting problems with the current implementation of the SM-method in Section~5.2. After that we elaborate on the measurement procedure and give details about the machine architecture on which the measurements have been performed in Section~5.3. Finally the results will be presented in Sections~5.4~and~5.5.
     
     \subsection{Dataset extraction}
-    	We tested our kernels on datasets that we extracted from QMC=Chem using Variational Monte Carlo (VMC) to run a ground state calculation for Benzene (42 electrons, 21 spin-up, 21 spin-down), using 329 and 15784 determinants respectively. The datasets are extracted after a single electron move, when the MOs and determiants in Eqn.~\ref{eqn:mbwf} are being updated. Additional Fortran \texttt{write}-statements were added to the file \texttt{\$QMCCHEM\_ROOTsrc/det.irp.f} to extract and save the following data
+    	We tested our kernels on datasets\cite{datasets} that we extracted from QMC=Chem using Variational Monte Carlo (VMC) to run a ground state calculation for Benzene (42 electrons, 21 spin-up, 21 spin-down), using 329 and 15784 determinants respectively. The datasets are extracted after a single electron move, when the MOs and determiants in Eqn.~\ref{eqn:mbwf} are being updated. Additional Fortran \texttt{write}-statements were added to the file \texttt{\$QMCCHEM\_ROOTsrc/det.irp.f} to extract and save the following data
     	\begin{itemize}
     		\item the number of the determinant in the chain, starting from 1 and omitting numbers $i~\times~N_\mathrm{dets},~i=0,1,\ldots$ that are computed with LAPACK
     		\item the dimension of the Slater-matrix
@@ -760,9 +783,9 @@ Set the global cumulator to 0\;
     The HPC versions of these kernels can be found at \url{https://github.com/TREX-CoE/qmckl/tree/master/org/hpc}.
   
   \section{Preliminary work on $K\times K$ Woodbury on the GPU}
-    There are some preliminary results after a first attempt on porting the $K\times K$ Woodbury kernel to GPU architechtures. Since this is ongoing work it was not included in Section~4, nor yet in the QMCkl. The ultimate goal would be to have a GPU implementation that performs faster, on a general GPU architecture,  under typical workloads, than on a (multi-core) CPU. Preferably it uses only open standards like OpenMP Offload, OpenACC, OpenCL or SYCL to increase portability and prevent a ``vendor lock-in''. If and when such a version is realised, it can be added to the QMCkl.\\
+    There are some preliminary results after a first attempt on porting the $K\times K$ Woodbury kernel to GPU architectures. Since this is ongoing work it was not included in Section~4, nor yet in the QMCkl. The ultimate goal would be to have a GPU implementation that performs faster, on a general GPU architecture,  under typical workloads, than on a (multi-core) CPU. Preferably it uses only open standards like OpenMP offloading, OpenACC, OpenCL or SYCL to increase portability and prevent a ``vendor lock-in''. If and when such a version is realised, it can be added to the QMCkl.\\
       
-    The starting point has been the implementation of Algorithm~5 on the CPU. We used OpenMP to offload the data and the loops that can not be written in terms of standard BLAS/LAPACK-calls to the GPU. The parts that are expressed as standard BLAS/LAPCK calls have been replaced with calls to NVIDIA's cuBLAS/cuSOLVER libraries.\\
+    The starting point has been the implementation of Algorithm~5 on the CPU. We used OpenMP to offload the data --and the loops that could not be written in terms of standard BLAS/LAPACK-calls-- to the GPU. The parts that are expressed as standard BLAS/LAPCK calls have been replaced with calls to NVIDIA's cuBLAS/cuSOLVER libraries.\\
     
     The the GPU specific hard-- and software used for the performance measurements are the same as mentioned in Section~5.2 with the addition of a NVIDIA GPU using the Ampere architecture (GA102) with 10GB of device memory and CUDA Compute Capability 8.6. The GPU-ready code was compiled with NVIDIA's \texttt{nvc/nvc++} compilers and profiled/analysed with NVIDIA Nsight Systems/Compute and NVIDIA Tools Extension (NVTX) included in the NVIDIA HPC SDK version 22.7 (July 2022).
   
@@ -800,7 +823,7 @@ Set the global cumulator to 0\;
       \begin{enumerate}
         \item we can model/predict what acceleration we could reasonably expect from a kernel like this on GPU architechtures,
         \item in order to know how far away we are from optimal performance,
-        \item we are using open programming models like OpenMP Offload, OpenACC correctly,
+        \item we are using open programming models like OpenMP offloading, OpenACC correctly,
         \item if there are problems with their implementation in the used compilers,
         \item we need to resort to lower-level programming using C++ language extensions like CUDA, OpenCL or SYCL.
       \end{enumerate}
