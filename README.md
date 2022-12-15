@@ -18,4 +18,5 @@
     Finally, we include performance- and numerical benchmarks to demonstrate that the numerical
     issues that have been identified in QMC=Chem have been resolved and the stated objectives
     have been met.
-
+    
+ [Read the report: 'SMWB_report.pdf'](SMWB_report.pdf)
