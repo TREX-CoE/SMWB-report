@@ -365,7 +365,9 @@
       where $U:N\times K$, $C:K\times K$ and $V:K\times N$ are conformable matrices. The matrices $U$ and $V$ contain the updates and the update locations in the Slater-matrix repectively. Notice that
       \begin{align}\label{eqn:wb-denom}
         D:=C^{-1}+VA^{-1}U
-      \end{align}  is at most $K\times K$. To give you some perspective, when calculating the electronic structure and ground state properties of the compound Benzene with QMC=Chem, in 75\% of the cases the number of updates that need to be applied to the inverse Slater-matrix is not larger than $K=6$, whereas the Slater-matrix is $N=21$.\\
+      \end{align}  is at most $K\times K$. To give some perspective, when calculating the electronic structure and ground state properties of the compound Benzene with QMC=Chem, in 75\% of the cases the number of updates that need to be applied to the inverse Slater-matrix is not larger than $K=6$, whereas the Slater-matrix is $N=21$.\\
+      
+      Having said that, using Woodbury for rank-$K$ updates can be more costly than $K$ rank-1 SM-iterations, depending on the architecture and the implementation. There is no way to know a priory if this will be the case, so we recommend running a benchmark for an SM-kernel and a Woodbury-kernel and make the final choice based on the results.\\
       
       Notice also that for $C=I$, $U=u$ and $V=v^\top$, $D$ reduces to
       \begin{align}
@@ -383,7 +385,6 @@
         D&:=I+VB \\
         E&:=VA_{\text{old}}^{-1}
       \end{align}
-      
       The algorithm for $K$ updates is listed below\\
       
       \begin{algorithm}[H]
